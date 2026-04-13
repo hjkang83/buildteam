@@ -23,6 +23,9 @@ venv/
 logs/
 tmp/
 
+# Mock demo artifacts (generated each run)
+meetings/*MOCK*.md
+
 # Node (Stage 7)
 node_modules/
 dist/

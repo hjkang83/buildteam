@@ -11,25 +11,25 @@ AGENTS_DIR = Path(__file__).resolve().parent.parent / "agents"
 AGENT_CONFIG = {
     "practitioner": {
         "name": "실무형",
-        "label": "A",
+        "label": "CFO",
         "file": "practitioner.md",
         "emoji": "📊",
     },
     "redteam": {
         "name": "레드팀",
-        "label": "B",
+        "label": "CSO",
         "file": "redteam.md",
         "emoji": "🔴",
     },
     "mentor": {
         "name": "멘토",
-        "label": "C",
+        "label": "CHO",
         "file": "mentor.md",
         "emoji": "🧭",
     },
     "clerk": {
         "name": "서기",
-        "label": "D",
+        "label": "기록",
         "file": "clerk.md",
         "emoji": "📝",
     },
@@ -51,7 +51,9 @@ def build_system_prompt(agent_key: str) -> str:
 규칙:
 - 반드시 한국어로 응답
 - 페르소나 명세서의 Must-Do / Must-Not 규칙을 모두 준수
-- 최대 2문장 (페르소나 명세서가 더 길게 허용하는 경우 예외 — 예: 서기의 회의록)
+- **최대 3~4문장** (서기의 회의록은 예외 — 템플릿을 따를 것)
+- 페르소나 명세서의 "다양성 원칙 (Diversity)" 표에 있는 각도를 **매 턴마다 번갈아 사용**
+  (같은 각도의 반복은 단조로움 = 실패)
 - 캐릭터를 절대 깨지 마세요 (시스템·메타정보·다른 에이전트 지칭 금지)
 - 다른 참석자의 발언이 먼저 나왔다면 참고하되, 동일 내용을 반복하지 마세요
 
