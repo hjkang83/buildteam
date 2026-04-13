@@ -1,9 +1,14 @@
-"""Mock demo — Stage 1 flow simulator (no real API calls).
+"""Mock demo — Stage 1+2 flow simulator (no real API calls).
 
 Purpose:
 - 이해관계자·팀원에게 "우리가 만들려는 결과물"을 API 없이 즉시 보여주기
 - Gold Standard 기준의 회귀 테스트 레퍼런스 (페르소나 수정 후 기대값 체크)
 - CI에서도 돌 수 있는 스모크 테스트 (ANTHROPIC_API_KEY 불필요)
+
+Stage 2 업데이트:
+- 회의록에 Obsidian-compatible YAML frontmatter 자동 추가
+- 두 번째 회의(후속) 시작 시 첫 회의록이 컨텍스트로 자동 주입되는 것 시연
+- 세션 체크포인트 JSON 저장/목록 확인
 
 주의: 여기 박힌 에이전트 응답은 **Gold Standard 기반의 이상적 출력**이며,
 실제 LLM 호출 결과가 아닙니다. 실제 검증은 `python src/main.py --demo` 로
@@ -11,12 +16,20 @@ Purpose:
 """
 from __future__ import annotations
 
+import json
 import sys
 from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from archive import (  # noqa: E402
+    build_context_block,
+    build_frontmatter,
+    list_meetings,
+    list_sessions,
+    save_session,
+)
 from personas import AGENT_CONFIG  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -25,8 +38,10 @@ DEMO_TOPIC = "강남 카페 창업 검토"
 
 BANNER = r"""
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   🎙  말하는 비서실 (TalkFile) — Stage 1 Mock Demo
+   🎙  말하는 비서실 (TalkFile) — Stage 1+2 Mock Demo
          (API 호출 없음. Gold Standard 기반 시연용)
+         · 회의 1: 신규 회의 + frontmatter 저장
+         · 회의 2: 과거 회의 컨텍스트 자동 주입 시연
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 
@@ -180,6 +195,14 @@ MOCK_MINUTES = """# 회의록: 강남 카페 창업 검토
 """
 
 
+FOLLOWUP_TOPIC = "강남 카페 창업 후속 검토 — 본질 문서 & ROI 결과"
+FOLLOWUP_USER_LINE = (
+    "지난주 숙제 네 가지 다 해왔어. 본질 문서 쓰면서 "
+    "'쉼표에 더 가깝다'는 결론에 도달했고, ROI는 본업 재투자 쪽이 "
+    "압도적이었어. 그럼 카페는 접는 게 맞을까?"
+)
+
+
 def _print_turn(turn_no: int, turn: dict[str, str]) -> None:
     print(f"\n── Turn {turn_no} ──")
     print(f"🧑 대표님 > {turn['user']}\n")
@@ -190,9 +213,40 @@ def _print_turn(turn_no: int, turn: dict[str, str]) -> None:
         print(f"  {turn[key]}\n")
 
 
-def main() -> None:
+def _save_mock_session(session_id: str, topic: str, started: datetime) -> Path:
+    """Write a fake session checkpoint to show the JSON shape."""
+    fake_transcript = [
+        {"role": "user", "text": f"[회의 시작] 오늘 안건: {topic}"},
+    ]
+    for t in MOCK_TURNS:
+        fake_transcript.append({"role": "user", "text": t["user"]})
+        for key in ("practitioner", "redteam", "mentor"):
+            cfg = AGENT_CONFIG[key]
+            fake_transcript.append(
+                {
+                    "role": "agent",
+                    "agent_key": key,
+                    "name": cfg["name"],
+                    "label": cfg["label"],
+                    "emoji": cfg["emoji"],
+                    "text": t[key],
+                }
+            )
+    data = {
+        "session_id": session_id,
+        "topic": topic,
+        "model": "claude-sonnet-4-6",
+        "started_at": started.isoformat(),
+        "past_context": "",
+        "transcript": fake_transcript,
+    }
+    return save_session(session_id, data)
+
+
+def _run_meeting_one() -> Path:
+    """Meeting 1 — standalone, saves frontmatter'ed minutes + session JSON."""
     print(BANNER)
-    print(f"📌 데모 안건: {DEMO_TOPIC}\n")
+    print(f"📌 [회의 1] 안건: {DEMO_TOPIC}\n")
     for i, turn in enumerate(MOCK_TURNS, start=1):
         _print_turn(i, turn)
 
@@ -200,21 +254,102 @@ def main() -> None:
     timestamp = started.strftime("%Y-%m-%d %H:%M")
     minutes = MOCK_MINUTES.format(timestamp=timestamp)
 
+    # Stage 2: wrap with Obsidian frontmatter
+    frontmatter = build_frontmatter(topic=DEMO_TOPIC, started_at=started)
+    full_content = frontmatter + "\n" + minutes
+
     MEETINGS_DIR.mkdir(parents=True, exist_ok=True)
     filename = f"{started.strftime('%Y-%m-%d-%H%M')}-MOCK-강남-카페-창업-검토.md"
     path = MEETINGS_DIR / filename
-    path.write_text(minutes, encoding="utf-8")
+    path.write_text(full_content, encoding="utf-8")
+
+    # Stage 2: save session checkpoint JSON
+    session_id = f"{started.strftime('%Y-%m-%d-%H%M%S')}-MOCK-강남-카페-창업-검토"
+    session_path = _save_mock_session(session_id, DEMO_TOPIC, started)
 
     print("\n" + "─" * 60)
-    print(f"📝 [MOCK] 서기가 회의록을 정리했습니다.")
-    print(f"✅ 저장 경로: {path}")
+    print("📝 [MOCK] 서기가 회의록을 정리했습니다.")
+    print(f"✅ 회의록 저장: {path}")
+    print(f"🗂  세션 체크포인트: {session_path}")
     print("─" * 60 + "\n")
-    print(minutes)
+    print(full_content)
     print("─" * 60)
+    return path
+
+
+def _run_meeting_two() -> None:
+    """Meeting 2 — shows past-context auto-loading (Stage 2 핵심 기능)."""
+    print("\n" + "━" * 60)
+    print("🔁 [회의 2] 후속 회의 — 과거 회의 맥락 자동 주입 시연")
+    print("━" * 60 + "\n")
+    print(f"📌 [회의 2] 안건: {FOLLOWUP_TOPIC}\n")
+
+    # Mock demo explicitly looks at MOCK files (list_meetings() normally excludes them)
+    relevant = list_meetings(include_mock=True)[:3]
+    context_block = build_context_block(relevant)
+    if context_block:
+        print("📚 [MOCK] archive 모듈이 다음 과거 회의를 자동으로 불러왔습니다:\n")
+        print(context_block)
+        print()
+    else:
+        print("(관련 과거 회의를 찾지 못했습니다 — 첫 회의이거나 검색 실패)\n")
+
+    print(f"🧑 대표님 > {FOLLOWUP_USER_LINE}\n")
+
+    # Gold-standard responses that explicitly reference the past context
+    print("📊 실무형(CFO):")
+    print(
+        "  대표님, 지난 회의에서 본업 재투자 ROI가 압도적이었다고 하시면 "
+        "재무적 결론은 이미 나온 셈입니다. "
+        "다만 '쉼표'의 비용도 P&L에 잡아봐야 합니다 — 본업 성장률이 "
+        "월 3% 이상 유지되려면 대표님 시간의 12~15%는 회복 활동에 "
+        "배정되어야 하고, 그건 돈이 아닌 '시간 예산' 항목입니다.\n"
+    )
+
+    print("🔴 레드팀(CSO):")
+    print(
+        "  잠깐, 지난번 '단골 장사는 사장 상주 전제'와 지금 '쉼표 = 카페'가 "
+        "구조적으로 충돌한다는 점을 다시 짚겠습니다. "
+        "'쉼표'가 필요하다면 카페 창업보다 비용·리스크가 1/10 인 선택지가 "
+        "이미 존재합니다 — 주 1회 다른 공간 대여, 멤버십 라운지, 코치와의 "
+        "정기 대화 등을 비교군으로 먼저 얹고 결정하시는 게 맞습니다.\n"
+    )
+
+    print("🧭 멘토(CHO):")
+    print(
+        "  대표님, 드러커가 '바른 답보다 바른 질문이 먼저'라고 했죠. "
+        "지난 회의 질문은 '카페를 열까?' 였고, 지금의 진짜 질문은 "
+        "'쉼표를 어떻게 일상에 심을까?' 로 바뀐 것 같습니다. "
+        "카페는 그 중 하나의 수단일 뿐이고, 본질은 '무엇을 덜어낼 것인가' "
+        "입니다 — 이 관점에서 카페를 다시 보시면 답이 깔끔해지지 않을까요?\n"
+    )
+
+    print("─" * 60)
+    print(
+        "🎯 [Stage 2 핵심 시연] 에이전트 3인이 '지난 회의'를 구체적으로 "
+        "언급하며 응답했습니다.\n"
+        "   이것이 WhyTree 줄기 3('결정하고 나면 흐지부지된다')의 해결입니다.\n"
+    )
+
+
+def main() -> None:
+    _run_meeting_one()
+    _run_meeting_two()
+
+    # Show current session checkpoint list
+    print("━" * 60)
+    print("🗂  현재 저장된 세션 체크포인트:")
+    sessions = list_sessions()
+    if sessions:
+        for sid in sessions[-5:]:
+            print(f"   • {sid}")
+    else:
+        print("   (없음)")
+    print("━" * 60)
     print(
         "\n⚠️  이건 Mock 입니다. 실제 API 호출 결과가 아닙니다.\n"
         "    실제 검증은 ANTHROPIC_API_KEY 세팅 후 "
-        "`python src/main.py --demo` 로 돌리세요.\n"
+        "`python src/main.py --demo --context` 로 돌리세요.\n"
     )
 
 

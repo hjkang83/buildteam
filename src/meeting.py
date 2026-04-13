@@ -6,6 +6,12 @@ Stage 1 design decisions:
 - Each agent sees a rebuilt conversation history where its OWN past turns are
   'assistant' messages and everything else (user + other agents) is folded into
   'user' messages — this is required by the Anthropic Messages API shape.
+
+Stage 2 additions (회의 지속성):
+- Past meeting context auto-loaded via `Meeting.with_context(topic)`
+- Session checkpointing after every turn (`checkpoint()` → `.sessions/*.json`)
+- Crash resume via `Meeting.from_session(session_id)`
+- Finalized meeting log gets Obsidian-compatible YAML frontmatter
 """
 from __future__ import annotations
 
@@ -18,6 +24,13 @@ from typing import Any
 
 from anthropic import AsyncAnthropic
 
+from archive import (
+    build_context_block,
+    build_frontmatter,
+    find_relevant_meetings,
+    load_session,
+    save_session,
+)
 from personas import AGENT_CONFIG, build_system_prompt
 
 MEETINGS_DIR = Path(__file__).resolve().parent.parent / "meetings"
@@ -58,11 +71,21 @@ class Agent:
 class Meeting:
     """One meeting session. Holds a linear transcript of turns."""
 
-    def __init__(self, topic: str, model: str | None = None):
+    def __init__(
+        self,
+        topic: str,
+        *,
+        model: str | None = None,
+        past_context: str = "",
+        session_id: str | None = None,
+        started_at: datetime | None = None,
+        transcript: list[dict[str, Any]] | None = None,
+    ):
         self.topic = topic
-        self.started_at = datetime.now()
+        self.started_at = started_at or datetime.now()
         self.model = model or os.getenv("LLM_MODEL", DEFAULT_MODEL)
-        self.transcript: list[dict[str, Any]] = []
+        self.past_context = past_context
+        self.session_id = session_id or _make_session_id(self.started_at, topic)
 
         self.client = AsyncAnthropic()
         self.speakers: dict[str, Agent] = {
@@ -70,9 +93,53 @@ class Meeting:
         }
         self.clerk: Agent = Agent(CLERK_KEY, self.client, self.model)
 
-        # Seed the transcript with the topic so agents have context from turn 1
-        self.transcript.append(
-            {"role": "user", "text": f"[회의 시작] 오늘 안건: {topic}"}
+        if transcript is not None:
+            # Resumed session — trust the stored transcript as-is
+            self.transcript = transcript
+        else:
+            self.transcript = []
+            # Seed with past context (if any) so agents see it before turn 1
+            if past_context:
+                self.transcript.append({"role": "user", "text": past_context})
+            self.transcript.append(
+                {"role": "user", "text": f"[회의 시작] 오늘 안건: {topic}"}
+            )
+
+    # ------------------------------------------------------------------
+    # Alternate constructors (Stage 2)
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def with_context(
+        cls,
+        topic: str,
+        *,
+        limit: int = 3,
+        model: str | None = None,
+    ) -> "Meeting":
+        """Start a new meeting with auto-loaded past-meeting context.
+
+        Runs a keyword-overlap search over /meetings/*.md and injects the top
+        N matches as a system-prompt-style 'user' message before turn 1.
+        """
+        relevant = find_relevant_meetings(topic, limit=limit)
+        past = build_context_block(relevant)
+        return cls(topic, model=model, past_context=past)
+
+    @classmethod
+    def from_session(cls, session_id: str) -> "Meeting | None":
+        """Rehydrate a crashed/interrupted meeting from its JSON checkpoint."""
+        data = load_session(session_id)
+        if data is None:
+            return None
+        started_at = datetime.fromisoformat(data["started_at"])
+        return cls(
+            topic=data["topic"],
+            model=data.get("model"),
+            past_context=data.get("past_context", ""),
+            session_id=session_id,
+            started_at=started_at,
+            transcript=data.get("transcript", []),
         )
 
     # ------------------------------------------------------------------
@@ -106,7 +173,30 @@ class Meeting:
             }
             self.transcript.append(turn)
             new_turns.append(turn)
+
+        # Stage 2: checkpoint after every turn so a crash loses ≤ 1 turn
+        try:
+            self.checkpoint()
+        except OSError:
+            # Checkpointing is best-effort; never block the meeting flow
+            pass
         return new_turns
+
+    # ------------------------------------------------------------------
+    # Checkpointing (Stage 2)
+    # ------------------------------------------------------------------
+
+    def checkpoint(self) -> Path:
+        """Persist current state as JSON so the meeting can resume on crash."""
+        data = {
+            "session_id": self.session_id,
+            "topic": self.topic,
+            "model": self.model,
+            "started_at": self.started_at.isoformat(),
+            "past_context": self.past_context,
+            "transcript": self.transcript,
+        }
+        return save_session(self.session_id, data)
 
     def _messages_for_agent(self, agent_key: str) -> list[dict[str, str]]:
         """Build an Anthropic-compatible messages array from the transcript
@@ -174,12 +264,19 @@ class Meeting:
         )
         minutes = _strip_code_fence(minutes)
 
+        # Stage 2: wrap with Obsidian-compatible YAML frontmatter
+        frontmatter = build_frontmatter(
+            topic=self.topic,
+            started_at=self.started_at,
+        )
+        full_content = frontmatter + "\n" + minutes
+
         MEETINGS_DIR.mkdir(parents=True, exist_ok=True)
         slug = _slugify(self.topic)
         filename = f"{self.started_at.strftime('%Y-%m-%d-%H%M')}-{slug}.md"
         path = MEETINGS_DIR / filename
-        path.write_text(minutes, encoding="utf-8")
-        return minutes, path
+        path.write_text(full_content, encoding="utf-8")
+        return full_content, path
 
     def _full_transcript_text(self) -> str:
         lines: list[str] = []
@@ -216,3 +313,8 @@ def _slugify(text: str) -> str:
     s = re.sub(r"[^\w\uac00-\ud7a3]+", "-", text, flags=re.UNICODE)
     s = s.strip("-")
     return (s[:40] or "meeting")
+
+
+def _make_session_id(started_at: datetime, topic: str) -> str:
+    """Deterministic per-meeting session id (used for checkpoint filenames)."""
+    return f"{started_at.strftime('%Y-%m-%d-%H%M%S')}-{_slugify(topic)}"
