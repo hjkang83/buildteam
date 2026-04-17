@@ -1,17 +1,17 @@
-"""Meeting orchestrator: 4 agents collaborating through the Anthropic API.
+"""Meeting orchestrator: C-suite agents collaborating through the Anthropic API.
 
-Stage 1 design decisions:
-- 3 speakers (실무형/레드팀/멘토) respond **in parallel** per user turn (latency win)
-- 서기(Clerk) runs once at the end in batch mode to produce a Markdown meeting log
+Architecture:
+- 3 C-suite (CFO/CSO/고문) respond **in parallel** per user turn
+- 비서실장(Clerk) runs once at the end in batch mode to produce meeting minutes
 - Each agent sees a rebuilt conversation history where its OWN past turns are
   'assistant' messages and everything else (user + other agents) is folded into
-  'user' messages — this is required by the Anthropic Messages API shape.
+  'user' messages — required by the Anthropic Messages API shape.
 
-Stage 2 additions (회의 지속성):
+Continuity features:
 - Past meeting context auto-loaded via `Meeting.with_context(topic)`
 - Session checkpointing after every turn (`checkpoint()` → `.sessions/*.json`)
 - Crash resume via `Meeting.from_session(session_id)`
-- Finalized meeting log gets Obsidian-compatible YAML frontmatter
+- Finalized meeting log gets YAML frontmatter
 """
 from __future__ import annotations
 
@@ -32,6 +32,17 @@ from archive import (
     save_session,
 )
 from personas import AGENT_CONFIG, build_system_prompt
+from real_estate import format_for_agents, get_multi_region_data
+from file_parser import (
+    format_for_agents as format_files_for_agents,
+    parse_file,
+)
+from yield_analyzer import (
+    InvestmentParams,
+    analyze_multi_region,
+    format_analysis_for_agents,
+)
+from scenario import format_full_scenario_for_agents
 
 MEETINGS_DIR = Path(__file__).resolve().parent.parent / "meetings"
 SPEAKERS: list[str] = ["practitioner", "redteam", "mentor"]
@@ -77,6 +88,10 @@ class Meeting:
         *,
         model: str | None = None,
         past_context: str = "",
+        market_data: str = "",
+        yield_data: str = "",
+        scenario_data: str = "",
+        file_data: str = "",
         session_id: str | None = None,
         started_at: datetime | None = None,
         transcript: list[dict[str, Any]] | None = None,
@@ -85,6 +100,10 @@ class Meeting:
         self.started_at = started_at or datetime.now()
         self.model = model or os.getenv("LLM_MODEL", DEFAULT_MODEL)
         self.past_context = past_context
+        self.market_data = market_data
+        self.yield_data = yield_data
+        self.scenario_data = scenario_data
+        self.file_data = file_data
         self.session_id = session_id or _make_session_id(self.started_at, topic)
 
         self.client = AsyncAnthropic()
@@ -94,37 +113,96 @@ class Meeting:
         self.clerk: Agent = Agent(CLERK_KEY, self.client, self.model)
 
         if transcript is not None:
-            # Resumed session — trust the stored transcript as-is
             self.transcript = transcript
         else:
             self.transcript = []
-            # Seed with past context (if any) so agents see it before turn 1
             if past_context:
                 self.transcript.append({"role": "user", "text": past_context})
+            if market_data:
+                self.transcript.append({"role": "user", "text": market_data})
+            if yield_data:
+                self.transcript.append({"role": "user", "text": yield_data})
+            if scenario_data:
+                self.transcript.append({"role": "user", "text": scenario_data})
+            if file_data:
+                self.transcript.append({"role": "user", "text": file_data})
             self.transcript.append(
                 {"role": "user", "text": f"[회의 시작] 오늘 안건: {topic}"}
             )
 
     # ------------------------------------------------------------------
-    # Alternate constructors (Stage 2)
+    # Alternate constructors
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _build_region_blocks(
+        regions: list[str],
+        params: InvestmentParams | None = None,
+    ) -> tuple[str, str, str]:
+        """Return (market_data, yield_data, scenario_data) for given regions."""
+        summaries = get_multi_region_data(regions)
+        market = format_for_agents(summaries)
+        analyses = analyze_multi_region(summaries, params)
+        yld = format_analysis_for_agents(analyses)
+        scn = format_full_scenario_for_agents(summaries, params)
+        return market, yld, scn
 
     @classmethod
     def with_context(
         cls,
         topic: str,
         *,
+        regions: list[str] | None = None,
+        params: InvestmentParams | None = None,
         limit: int = 3,
         model: str | None = None,
     ) -> "Meeting":
-        """Start a new meeting with auto-loaded past-meeting context.
-
-        Runs a keyword-overlap search over /meetings/*.md and injects the top
-        N matches as a system-prompt-style 'user' message before turn 1.
-        """
+        """Start a new meeting with auto-loaded past-meeting context
+        and optional real estate market data + yield analysis."""
         relevant = find_relevant_meetings(topic, limit=limit)
         past = build_context_block(relevant)
-        return cls(topic, model=model, past_context=past)
+        market, yld, scn = "", "", ""
+        if regions:
+            market, yld, scn = cls._build_region_blocks(regions, params)
+        return cls(topic, model=model, past_context=past,
+                   market_data=market, yield_data=yld, scenario_data=scn)
+
+    @classmethod
+    def with_market_data(
+        cls,
+        topic: str,
+        regions: list[str],
+        *,
+        params: InvestmentParams | None = None,
+        model: str | None = None,
+    ) -> "Meeting":
+        """Start a new meeting with real estate market data + yield + scenario."""
+        market, yld, scn = cls._build_region_blocks(regions, params)
+        return cls(topic, model=model, market_data=market,
+                   yield_data=yld, scenario_data=scn)
+
+    @classmethod
+    def with_files(
+        cls,
+        topic: str,
+        file_paths: list[str],
+        *,
+        regions: list[str] | None = None,
+        params: InvestmentParams | None = None,
+        model: str | None = None,
+    ) -> "Meeting":
+        """Start a new meeting with uploaded file data (and optional market/yield/scenario)."""
+        from pathlib import Path as P
+        file_texts: list[tuple[str, str]] = []
+        for fp in file_paths:
+            text = parse_file(fp)
+            file_texts.append((P(fp).name, text))
+        file_block = format_files_for_agents(file_texts)
+        market, yld, scn = "", "", ""
+        if regions:
+            market, yld, scn = cls._build_region_blocks(regions, params)
+        return cls(topic, model=model, market_data=market,
+                   yield_data=yld, scenario_data=scn, file_data=file_block)
 
     @classmethod
     def from_session(cls, session_id: str) -> "Meeting | None":
@@ -137,6 +215,10 @@ class Meeting:
             topic=data["topic"],
             model=data.get("model"),
             past_context=data.get("past_context", ""),
+            market_data=data.get("market_data", ""),
+            yield_data=data.get("yield_data", ""),
+            scenario_data=data.get("scenario_data", ""),
+            file_data=data.get("file_data", ""),
             session_id=session_id,
             started_at=started_at,
             transcript=data.get("transcript", []),
@@ -194,6 +276,10 @@ class Meeting:
             "model": self.model,
             "started_at": self.started_at.isoformat(),
             "past_context": self.past_context,
+            "market_data": self.market_data,
+            "yield_data": self.yield_data,
+            "scenario_data": self.scenario_data,
+            "file_data": self.file_data,
             "transcript": self.transcript,
         }
         return save_session(self.session_id, data)
