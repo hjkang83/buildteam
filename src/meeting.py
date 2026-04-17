@@ -33,6 +33,10 @@ from archive import (
 )
 from personas import AGENT_CONFIG, build_system_prompt
 from real_estate import format_for_agents, get_multi_region_data
+from file_parser import (
+    format_for_agents as format_files_for_agents,
+    parse_file,
+)
 
 MEETINGS_DIR = Path(__file__).resolve().parent.parent / "meetings"
 SPEAKERS: list[str] = ["practitioner", "redteam", "mentor"]
@@ -79,6 +83,7 @@ class Meeting:
         model: str | None = None,
         past_context: str = "",
         market_data: str = "",
+        file_data: str = "",
         session_id: str | None = None,
         started_at: datetime | None = None,
         transcript: list[dict[str, Any]] | None = None,
@@ -88,6 +93,7 @@ class Meeting:
         self.model = model or os.getenv("LLM_MODEL", DEFAULT_MODEL)
         self.past_context = past_context
         self.market_data = market_data
+        self.file_data = file_data
         self.session_id = session_id or _make_session_id(self.started_at, topic)
 
         self.client = AsyncAnthropic()
@@ -104,6 +110,8 @@ class Meeting:
                 self.transcript.append({"role": "user", "text": past_context})
             if market_data:
                 self.transcript.append({"role": "user", "text": market_data})
+            if file_data:
+                self.transcript.append({"role": "user", "text": file_data})
             self.transcript.append(
                 {"role": "user", "text": f"[회의 시작] 오늘 안건: {topic}"}
             )
@@ -145,6 +153,28 @@ class Meeting:
         return cls(topic, model=model, market_data=market)
 
     @classmethod
+    def with_files(
+        cls,
+        topic: str,
+        file_paths: list[str],
+        *,
+        regions: list[str] | None = None,
+        model: str | None = None,
+    ) -> "Meeting":
+        """Start a new meeting with uploaded file data (and optional market data)."""
+        from pathlib import Path as P
+        file_texts: list[tuple[str, str]] = []
+        for fp in file_paths:
+            text = parse_file(fp)
+            file_texts.append((P(fp).name, text))
+        file_block = format_files_for_agents(file_texts)
+        market = ""
+        if regions:
+            summaries = get_multi_region_data(regions)
+            market = format_for_agents(summaries)
+        return cls(topic, model=model, market_data=market, file_data=file_block)
+
+    @classmethod
     def from_session(cls, session_id: str) -> "Meeting | None":
         """Rehydrate a crashed/interrupted meeting from its JSON checkpoint."""
         data = load_session(session_id)
@@ -156,6 +186,7 @@ class Meeting:
             model=data.get("model"),
             past_context=data.get("past_context", ""),
             market_data=data.get("market_data", ""),
+            file_data=data.get("file_data", ""),
             session_id=session_id,
             started_at=started_at,
             transcript=data.get("transcript", []),
@@ -214,6 +245,7 @@ class Meeting:
             "started_at": self.started_at.isoformat(),
             "past_context": self.past_context,
             "market_data": self.market_data,
+            "file_data": self.file_data,
             "transcript": self.transcript,
         }
         return save_session(self.session_id, data)

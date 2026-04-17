@@ -33,6 +33,8 @@ except ImportError:
     pass
 
 from archive import list_sessions  # noqa: E402
+from file_parser import SUPPORTED_EXTENSIONS, parse_file  # noqa: E402
+from file_parser import format_for_agents as format_files_for_agents  # noqa: E402
 from meeting import Meeting  # noqa: E402
 from real_estate import REGION_CODES, format_for_agents, get_multi_region_data  # noqa: E402
 
@@ -69,10 +71,32 @@ def _print_turns(turns: list[dict]) -> None:
         print()
 
 
+def _load_files(file_paths: list[str]) -> str:
+    """Parse uploaded files and return formatted text block."""
+    file_texts: list[tuple[str, str]] = []
+    for fp in file_paths:
+        p = Path(fp)
+        print(f"📎 파일 로딩: {p.name}")
+        try:
+            text = parse_file(fp)
+            file_texts.append((p.name, text))
+            print(f"   ✅ {p.name} 파싱 완료")
+        except (FileNotFoundError, ValueError) as e:
+            print(f"   ❌ {p.name} 실패: {e}")
+    if not file_texts:
+        return ""
+    block = format_files_for_agents(file_texts)
+    print()
+    print(block)
+    print()
+    return block
+
+
 async def _run_interactive(
     *,
     use_context: bool = False,
     regions: list[str] | None = None,
+    files: list[str] | None = None,
 ) -> None:
     print(BANNER)
     topic = input("이번 회의의 안건을 한 줄로 말해주세요 > ").strip()
@@ -88,12 +112,21 @@ async def _run_interactive(
         print(market_data)
         print()
 
+    file_data = ""
+    if files:
+        file_data = _load_files(files)
+
     if use_context:
         meeting = Meeting.with_context(topic, regions=regions)
+        if file_data:
+            meeting.file_data = file_data
+            meeting.transcript.insert(-1, {"role": "user", "text": file_data})
         if meeting.past_context:
             print("\n📚 관련 과거 회의를 자동으로 불러왔습니다:")
             print(meeting.past_context)
             print()
+    elif files:
+        meeting = Meeting.with_files(topic, files, regions=regions)
     elif market_data:
         meeting = Meeting(topic, market_data=market_data)
     else:
@@ -217,6 +250,12 @@ def main() -> None:
         help=f"실거래 데이터를 로딩할 지역 (예: 강남구 성동구). 지원: {', '.join(sorted(REGION_CODES))}",
     )
     parser.add_argument(
+        "--file",
+        nargs="+",
+        metavar="FILE",
+        help=f"회의에 참조할 파일 업로드 (지원: {', '.join(sorted(SUPPORTED_EXTENSIONS))})",
+    )
+    parser.add_argument(
         "--list-sessions",
         action="store_true",
         help="저장된 세션 체크포인트 목록 출력 후 종료",
@@ -231,12 +270,13 @@ def main() -> None:
         sys.exit(1)
 
     regions = args.region
+    files = args.file
     if args.resume:
         asyncio.run(_run_resume(args.resume))
     elif args.demo:
         asyncio.run(_run_demo(use_context=args.context, regions=regions))
     else:
-        asyncio.run(_run_interactive(use_context=args.context, regions=regions))
+        asyncio.run(_run_interactive(use_context=args.context, regions=regions, files=files))
 
 
 if __name__ == "__main__":
