@@ -32,6 +32,7 @@ from yield_analyzer import (
     format_analysis_for_agents,
 )
 from scenario import format_full_scenario_for_agents
+from demo_mock import MOCK_TURNS, MOCK_MINUTES, DEMO_TOPIC, DEMO_REGIONS
 
 
 st.set_page_config(
@@ -115,9 +116,12 @@ with st.sidebar:
     end_btn = col2.button("📝 회의 종료", use_container_width=True)
 
     if st.button("🗑 새 회의", use_container_width=True):
-        for key in ["meeting", "messages", "finalized", "minutes"]:
+        for key in ["meeting", "messages", "finalized", "minutes", "mock_mode"]:
             st.session_state.pop(key, None)
         st.rerun()
+
+    mock_btn = st.button("🎭 Mock 데모", use_container_width=True,
+                         help="API 키 없이 Gold Standard 기반 데모를 실행합니다")
 
     st.divider()
     st.caption("참석자")
@@ -189,6 +193,47 @@ if start_btn:
 
 
 # ------------------------------------------------------------------
+# Mock 데모 모드
+# ------------------------------------------------------------------
+
+if mock_btn:
+    from datetime import datetime
+
+    summaries = get_multi_region_data(DEMO_REGIONS)
+    market_data = format_for_agents(summaries)
+    analyses = analyze_multi_region(summaries)
+    yield_data = format_analysis_for_agents(analyses)
+    scenario_data = format_full_scenario_for_agents(summaries)
+
+    meeting = Meeting(DEMO_TOPIC, market_data=market_data,
+                      yield_data=yield_data, scenario_data=scenario_data)
+    st.session_state["meeting"] = meeting
+    st.session_state["mock_mode"] = True
+    st.session_state["finalized"] = False
+
+    msgs: list[dict] = []
+    if market_data:
+        msgs.append({"role": "system", "content": market_data, "type": "market"})
+    if yield_data:
+        msgs.append({"role": "system", "content": yield_data, "type": "yield"})
+    if scenario_data:
+        msgs.append({"role": "system", "content": scenario_data, "type": "scenario"})
+
+    for turn in MOCK_TURNS:
+        msgs.append({"role": "user", "content": turn["user"]})
+        for key in ("practitioner", "redteam", "mentor"):
+            msgs.append({"role": "agent", "agent_key": key, "content": turn[key]})
+
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+    minutes_text = MOCK_MINUTES.format(timestamp=timestamp)
+    msgs.append({"role": "minutes", "content": minutes_text})
+
+    st.session_state["messages"] = msgs
+    st.session_state["finalized"] = True
+    st.rerun()
+
+
+# ------------------------------------------------------------------
 # 메인 채팅 영역
 # ------------------------------------------------------------------
 
@@ -203,7 +248,8 @@ if meeting is None:
     st.info("👈 왼쪽 사이드바에서 안건을 입력하고 **회의 시작**을 눌러주세요.")
     st.stop()
 
-st.caption(f"📌 안건: {meeting.topic}  |  🗂 세션: {meeting.session_id}")
+mock_label = "  |  🎭 Mock 데모" if st.session_state.get("mock_mode") else ""
+st.caption(f"📌 안건: {meeting.topic}  |  🗂 세션: {meeting.session_id}{mock_label}")
 
 messages = st.session_state.get("messages", [])
 
