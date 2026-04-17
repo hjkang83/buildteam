@@ -37,6 +37,7 @@ from file_parser import SUPPORTED_EXTENSIONS, parse_file  # noqa: E402
 from file_parser import format_for_agents as format_files_for_agents  # noqa: E402
 from meeting import Meeting  # noqa: E402
 from real_estate import REGION_CODES, format_for_agents, get_multi_region_data  # noqa: E402
+from yield_analyzer import analyze_multi_region, format_analysis_for_agents  # noqa: E402
 
 
 BANNER = r"""
@@ -104,12 +105,16 @@ async def _run_interactive(
         print("안건이 없어 종료합니다.")
         return
 
-    market_data = ""
+    market_data, yield_data = "", ""
     if regions:
         print(f"\n📈 실거래 데이터 로딩 중... ({', '.join(regions)})")
         summaries = get_multi_region_data(regions)
         market_data = format_for_agents(summaries)
         print(market_data)
+        analyses = analyze_multi_region(summaries)
+        yield_data = format_analysis_for_agents(analyses)
+        if yield_data:
+            print(yield_data)
         print()
 
     file_data = ""
@@ -128,7 +133,7 @@ async def _run_interactive(
     elif files:
         meeting = Meeting.with_files(topic, files, regions=regions)
     elif market_data:
-        meeting = Meeting(topic, market_data=market_data)
+        meeting = Meeting(topic, market_data=market_data, yield_data=yield_data)
     else:
         meeting = Meeting(topic)
 
@@ -185,12 +190,16 @@ async def _run_demo(
     summaries = get_multi_region_data(regions)
     market_data = format_for_agents(summaries)
     print(market_data)
+    analyses = analyze_multi_region(summaries)
+    yield_data = format_analysis_for_agents(analyses)
+    if yield_data:
+        print(yield_data)
     print()
 
     if use_context:
         meeting = Meeting.with_context(DEMO_TOPIC, regions=regions)
     else:
-        meeting = Meeting(DEMO_TOPIC, market_data=market_data)
+        meeting = Meeting(DEMO_TOPIC, market_data=market_data, yield_data=yield_data)
 
     for user_text in DEMO_SCRIPT:
         print(f"🧑 대표님 > {user_text}\n")

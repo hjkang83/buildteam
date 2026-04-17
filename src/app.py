@@ -26,6 +26,11 @@ from personas import AGENT_CONFIG
 from real_estate import REGION_CODES, format_for_agents, get_multi_region_data
 from file_parser import parse_file, SUPPORTED_EXTENSIONS
 from file_parser import format_for_agents as format_files_for_agents
+from yield_analyzer import (
+    InvestmentParams,
+    analyze_multi_region,
+    format_analysis_for_agents,
+)
 
 
 st.set_page_config(
@@ -88,6 +93,20 @@ with st.sidebar:
         help="매물 리스트(Excel), 계약서(PDF) 등",
     )
 
+    with st.expander("⚙️ 투자 분석 조건", expanded=False):
+        ltv = st.slider("LTV (대출비율)", 0.0, 0.8, 0.6, 0.1, format="%.0f%%",
+                         help="매매가 대비 대출 비율")
+        loan_rate = st.slider("대출금리 (연 %)", 2.0, 7.0, 4.0, 0.5)
+        vacancy = st.slider("연간 공실 (개월)", 0.0, 3.0, 1.0, 0.5)
+        mgmt_fee = st.number_input("월 관리비 (만원)", 5, 30, 15, 5)
+
+    invest_params = InvestmentParams(
+        ltv=ltv,
+        loan_rate=loan_rate,
+        vacancy_months=vacancy,
+        mgmt_fee=mgmt_fee,
+    )
+
     st.divider()
 
     col1, col2 = st.columns(2)
@@ -118,10 +137,12 @@ if start_btn:
         st.error("❌ 회의 안건을 입력해 주세요.")
         st.stop()
 
-    market_data = ""
+    market_data, yield_data = "", ""
     if selected_regions:
         summaries = get_multi_region_data(selected_regions)
         market_data = format_for_agents(summaries)
+        analyses = analyze_multi_region(summaries, invest_params)
+        yield_data = format_analysis_for_agents(analyses)
 
     file_data = ""
     if uploaded_files:
@@ -144,6 +165,7 @@ if start_btn:
     meeting = Meeting(
         topic,
         market_data=market_data,
+        yield_data=yield_data,
         file_data=file_data,
     )
     st.session_state["meeting"] = meeting
@@ -153,6 +175,8 @@ if start_btn:
     init_msgs = []
     if market_data:
         init_msgs.append({"role": "system", "content": market_data, "type": "market"})
+    if yield_data:
+        init_msgs.append({"role": "system", "content": yield_data, "type": "yield"})
     if file_data:
         init_msgs.append({"role": "system", "content": file_data, "type": "file"})
     st.session_state["messages"] = init_msgs
@@ -180,8 +204,13 @@ messages = st.session_state.get("messages", [])
 
 for msg in messages:
     if msg["role"] == "system":
-        label = "📈 실거래 데이터" if msg.get("type") == "market" else "📎 업로드 파일"
-        with st.expander(label, expanded=False):
+        type_labels = {
+            "market": "📈 실거래 데이터",
+            "yield": "📊 수익률 분석",
+            "file": "📎 업로드 파일",
+        }
+        label = type_labels.get(msg.get("type", ""), "📋 데이터")
+        with st.expander(label, expanded=msg.get("type") == "yield"):
             st.text(msg["content"])
     elif msg["role"] == "user":
         with st.chat_message("user", avatar="🧑"):

@@ -37,6 +37,11 @@ from file_parser import (
     format_for_agents as format_files_for_agents,
     parse_file,
 )
+from yield_analyzer import (
+    InvestmentParams,
+    analyze_multi_region,
+    format_analysis_for_agents,
+)
 
 MEETINGS_DIR = Path(__file__).resolve().parent.parent / "meetings"
 SPEAKERS: list[str] = ["practitioner", "redteam", "mentor"]
@@ -83,6 +88,7 @@ class Meeting:
         model: str | None = None,
         past_context: str = "",
         market_data: str = "",
+        yield_data: str = "",
         file_data: str = "",
         session_id: str | None = None,
         started_at: datetime | None = None,
@@ -93,6 +99,7 @@ class Meeting:
         self.model = model or os.getenv("LLM_MODEL", DEFAULT_MODEL)
         self.past_context = past_context
         self.market_data = market_data
+        self.yield_data = yield_data
         self.file_data = file_data
         self.session_id = session_id or _make_session_id(self.started_at, topic)
 
@@ -110,6 +117,8 @@ class Meeting:
                 self.transcript.append({"role": "user", "text": past_context})
             if market_data:
                 self.transcript.append({"role": "user", "text": market_data})
+            if yield_data:
+                self.transcript.append({"role": "user", "text": yield_data})
             if file_data:
                 self.transcript.append({"role": "user", "text": file_data})
             self.transcript.append(
@@ -120,24 +129,37 @@ class Meeting:
     # Alternate constructors
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _build_region_blocks(
+        regions: list[str],
+        params: InvestmentParams | None = None,
+    ) -> tuple[str, str]:
+        """Return (market_data, yield_data) for given regions."""
+        summaries = get_multi_region_data(regions)
+        market = format_for_agents(summaries)
+        analyses = analyze_multi_region(summaries, params)
+        yld = format_analysis_for_agents(analyses)
+        return market, yld
+
     @classmethod
     def with_context(
         cls,
         topic: str,
         *,
         regions: list[str] | None = None,
+        params: InvestmentParams | None = None,
         limit: int = 3,
         model: str | None = None,
     ) -> "Meeting":
         """Start a new meeting with auto-loaded past-meeting context
-        and optional real estate market data."""
+        and optional real estate market data + yield analysis."""
         relevant = find_relevant_meetings(topic, limit=limit)
         past = build_context_block(relevant)
-        market = ""
+        market, yld = "", ""
         if regions:
-            summaries = get_multi_region_data(regions)
-            market = format_for_agents(summaries)
-        return cls(topic, model=model, past_context=past, market_data=market)
+            market, yld = cls._build_region_blocks(regions, params)
+        return cls(topic, model=model, past_context=past,
+                   market_data=market, yield_data=yld)
 
     @classmethod
     def with_market_data(
@@ -145,12 +167,12 @@ class Meeting:
         topic: str,
         regions: list[str],
         *,
+        params: InvestmentParams | None = None,
         model: str | None = None,
     ) -> "Meeting":
-        """Start a new meeting with real estate market data pre-loaded."""
-        summaries = get_multi_region_data(regions)
-        market = format_for_agents(summaries)
-        return cls(topic, model=model, market_data=market)
+        """Start a new meeting with real estate market data + yield analysis."""
+        market, yld = cls._build_region_blocks(regions, params)
+        return cls(topic, model=model, market_data=market, yield_data=yld)
 
     @classmethod
     def with_files(
@@ -159,20 +181,21 @@ class Meeting:
         file_paths: list[str],
         *,
         regions: list[str] | None = None,
+        params: InvestmentParams | None = None,
         model: str | None = None,
     ) -> "Meeting":
-        """Start a new meeting with uploaded file data (and optional market data)."""
+        """Start a new meeting with uploaded file data (and optional market/yield data)."""
         from pathlib import Path as P
         file_texts: list[tuple[str, str]] = []
         for fp in file_paths:
             text = parse_file(fp)
             file_texts.append((P(fp).name, text))
         file_block = format_files_for_agents(file_texts)
-        market = ""
+        market, yld = "", ""
         if regions:
-            summaries = get_multi_region_data(regions)
-            market = format_for_agents(summaries)
-        return cls(topic, model=model, market_data=market, file_data=file_block)
+            market, yld = cls._build_region_blocks(regions, params)
+        return cls(topic, model=model, market_data=market,
+                   yield_data=yld, file_data=file_block)
 
     @classmethod
     def from_session(cls, session_id: str) -> "Meeting | None":
@@ -186,6 +209,7 @@ class Meeting:
             model=data.get("model"),
             past_context=data.get("past_context", ""),
             market_data=data.get("market_data", ""),
+            yield_data=data.get("yield_data", ""),
             file_data=data.get("file_data", ""),
             session_id=session_id,
             started_at=started_at,
@@ -245,6 +269,7 @@ class Meeting:
             "started_at": self.started_at.isoformat(),
             "past_context": self.past_context,
             "market_data": self.market_data,
+            "yield_data": self.yield_data,
             "file_data": self.file_data,
             "transcript": self.transcript,
         }
