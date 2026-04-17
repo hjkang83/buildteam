@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from personas import AGENT_CONFIG  # noqa: E402
 from real_estate import format_for_agents, get_multi_region_data  # noqa: E402
 from yield_analyzer import analyze_multi_region, format_analysis_for_agents  # noqa: E402
+from scenario import format_full_scenario_for_agents  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MEETINGS_DIR = REPO_ROOT / "meetings"
@@ -186,6 +187,9 @@ def main() -> None:
     yield_text = format_analysis_for_agents(analyses)
     if yield_text:
         print(yield_text)
+    scenario_text = format_full_scenario_for_agents(summaries)
+    if scenario_text:
+        print(scenario_text)
     print()
 
     for i, turn in enumerate(MOCK_TURNS, start=1):
