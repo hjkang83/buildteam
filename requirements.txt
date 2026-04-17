@@ -1,25 +1,13 @@
-# Stage 1 (텍스트 기반 멀티 에이전트 MVP)
+# ── 핵심 (멀티 에이전트 LLM) ──
 anthropic>=0.39.0
 python-dotenv>=1.0.0
 
-# Stage 2 (파일 업로드: Excel/PDF 파싱)
+# ── 파일 업로드 (Excel/PDF 파싱) ──
 openpyxl>=3.1.0
 pdfplumber>=0.10.0
 
-# Stage 3 (Web UI)
+# ── Web UI ──
 streamlit>=1.30.0
 
-# Stage 3+ (STT) - 활성화 시 주석 해제
-# deepgram-sdk>=3.0.0
-# sounddevice>=0.4.6
-
-# Stage 4+ (TTS)
-# openai>=1.40.0
-
-# Stage 5 (Pipecat streaming)
-# pipecat-ai>=0.0.40
-
-# Stage 6 (RAG)
-# pinecone-client>=3.0.0
-
-# Stage 7 (Web UI) — 별도 package.json
+# ── 테스트 ──
+pytest>=8.0.0
