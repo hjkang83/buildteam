@@ -165,7 +165,7 @@ pytest tests/ -v
 | 분석 | yield_analyzer + scenario | 수익률 계산 + What-If 시뮬레이션 |
 | 파일 | openpyxl + pdfplumber | Excel/PDF 파싱 |
 | Frontend | Streamlit | 멀티 에이전트 채팅 UI |
-| 테스트 | pytest (69 tests) | API 키 없이 전체 로직 검증 |
+| 테스트 | pytest (122 tests) | API 키 없이 전체 로직 검증 (API mock 포함) |
 
 ---
 
@@ -189,7 +189,7 @@ buildteam/
 │   ├── file_parser.py         # Excel/PDF 파서
 │   ├── archive.py             # 회의록 저장 + 세션 체크포인트
 │   └── demo_mock.py           # Mock 데모 (API 불필요)
-├── tests/                     # pytest 테스트 스위트 (69 tests)
+├── tests/                     # pytest 테스트 스위트 (122 tests)
 ├── meetings/                  # 회의록 저장 디렉토리
 ├── MANIFEST.md                # 핵심 가치와 설계 원칙
 ├── WHYTREE.md                 # Why Tree 분석
