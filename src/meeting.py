@@ -32,6 +32,7 @@ from archive import (
     save_session,
 )
 from personas import AGENT_CONFIG, build_system_prompt
+from real_estate import format_for_agents, get_multi_region_data
 
 MEETINGS_DIR = Path(__file__).resolve().parent.parent / "meetings"
 SPEAKERS: list[str] = ["practitioner", "redteam", "mentor"]
@@ -77,6 +78,7 @@ class Meeting:
         *,
         model: str | None = None,
         past_context: str = "",
+        market_data: str = "",
         session_id: str | None = None,
         started_at: datetime | None = None,
         transcript: list[dict[str, Any]] | None = None,
@@ -85,6 +87,7 @@ class Meeting:
         self.started_at = started_at or datetime.now()
         self.model = model or os.getenv("LLM_MODEL", DEFAULT_MODEL)
         self.past_context = past_context
+        self.market_data = market_data
         self.session_id = session_id or _make_session_id(self.started_at, topic)
 
         self.client = AsyncAnthropic()
@@ -94,19 +97,19 @@ class Meeting:
         self.clerk: Agent = Agent(CLERK_KEY, self.client, self.model)
 
         if transcript is not None:
-            # Resumed session — trust the stored transcript as-is
             self.transcript = transcript
         else:
             self.transcript = []
-            # Seed with past context (if any) so agents see it before turn 1
             if past_context:
                 self.transcript.append({"role": "user", "text": past_context})
+            if market_data:
+                self.transcript.append({"role": "user", "text": market_data})
             self.transcript.append(
                 {"role": "user", "text": f"[회의 시작] 오늘 안건: {topic}"}
             )
 
     # ------------------------------------------------------------------
-    # Alternate constructors (Stage 2)
+    # Alternate constructors
     # ------------------------------------------------------------------
 
     @classmethod
@@ -114,17 +117,32 @@ class Meeting:
         cls,
         topic: str,
         *,
+        regions: list[str] | None = None,
         limit: int = 3,
         model: str | None = None,
     ) -> "Meeting":
-        """Start a new meeting with auto-loaded past-meeting context.
-
-        Runs a keyword-overlap search over /meetings/*.md and injects the top
-        N matches as a system-prompt-style 'user' message before turn 1.
-        """
+        """Start a new meeting with auto-loaded past-meeting context
+        and optional real estate market data."""
         relevant = find_relevant_meetings(topic, limit=limit)
         past = build_context_block(relevant)
-        return cls(topic, model=model, past_context=past)
+        market = ""
+        if regions:
+            summaries = get_multi_region_data(regions)
+            market = format_for_agents(summaries)
+        return cls(topic, model=model, past_context=past, market_data=market)
+
+    @classmethod
+    def with_market_data(
+        cls,
+        topic: str,
+        regions: list[str],
+        *,
+        model: str | None = None,
+    ) -> "Meeting":
+        """Start a new meeting with real estate market data pre-loaded."""
+        summaries = get_multi_region_data(regions)
+        market = format_for_agents(summaries)
+        return cls(topic, model=model, market_data=market)
 
     @classmethod
     def from_session(cls, session_id: str) -> "Meeting | None":
@@ -137,6 +155,7 @@ class Meeting:
             topic=data["topic"],
             model=data.get("model"),
             past_context=data.get("past_context", ""),
+            market_data=data.get("market_data", ""),
             session_id=session_id,
             started_at=started_at,
             transcript=data.get("transcript", []),
@@ -194,6 +213,7 @@ class Meeting:
             "model": self.model,
             "started_at": self.started_at.isoformat(),
             "past_context": self.past_context,
+            "market_data": self.market_data,
             "transcript": self.transcript,
         }
         return save_session(self.session_id, data)

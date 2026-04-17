@@ -34,6 +34,7 @@ except ImportError:
 
 from archive import list_sessions  # noqa: E402
 from meeting import Meeting  # noqa: E402
+from real_estate import REGION_CODES, format_for_agents, get_multi_region_data  # noqa: E402
 
 
 BANNER = r"""
@@ -46,6 +47,7 @@ BANNER = r"""
 """
 
 DEMO_TOPIC = "강남 오피스텔 투자 검토"
+DEMO_REGIONS = ["강남구", "성동구", "강서구"]
 DEMO_SCRIPT = [
     "강남 오피스텔 수익률 3%면 낮은 거 아냐?",
     "월세 수익 목적이야. 대출 60% 끼고 월 150만원 정도 나오면 좋겠어.",
@@ -67,19 +69,33 @@ def _print_turns(turns: list[dict]) -> None:
         print()
 
 
-async def _run_interactive(*, use_context: bool = False) -> None:
+async def _run_interactive(
+    *,
+    use_context: bool = False,
+    regions: list[str] | None = None,
+) -> None:
     print(BANNER)
     topic = input("이번 회의의 안건을 한 줄로 말해주세요 > ").strip()
     if not topic:
         print("안건이 없어 종료합니다.")
         return
 
+    market_data = ""
+    if regions:
+        print(f"\n📈 실거래 데이터 로딩 중... ({', '.join(regions)})")
+        summaries = get_multi_region_data(regions)
+        market_data = format_for_agents(summaries)
+        print(market_data)
+        print()
+
     if use_context:
-        meeting = Meeting.with_context(topic)
+        meeting = Meeting.with_context(topic, regions=regions)
         if meeting.past_context:
             print("\n📚 관련 과거 회의를 자동으로 불러왔습니다:")
             print(meeting.past_context)
             print()
+    elif market_data:
+        meeting = Meeting(topic, market_data=market_data)
     else:
         meeting = Meeting(topic)
 
@@ -123,17 +139,25 @@ async def _meeting_loop(meeting: Meeting) -> None:
         _print_turns(turns)
 
 
-async def _run_demo(*, use_context: bool = False) -> None:
+async def _run_demo(
+    *,
+    use_context: bool = False,
+    regions: list[str] | None = None,
+) -> None:
     print(BANNER)
-    print(f"📌 데모 안건: {DEMO_TOPIC}\n")
+    regions = regions or DEMO_REGIONS
+    print(f"📌 데모 안건: {DEMO_TOPIC}")
+    print(f"📈 비교 권역: {', '.join(regions)}\n")
+
+    summaries = get_multi_region_data(regions)
+    market_data = format_for_agents(summaries)
+    print(market_data)
+    print()
+
     if use_context:
-        meeting = Meeting.with_context(DEMO_TOPIC)
-        if meeting.past_context:
-            print("📚 관련 과거 회의를 자동으로 불러왔습니다:\n")
-            print(meeting.past_context)
-            print()
+        meeting = Meeting.with_context(DEMO_TOPIC, regions=regions)
     else:
-        meeting = Meeting(DEMO_TOPIC)
+        meeting = Meeting(DEMO_TOPIC, market_data=market_data)
 
     for user_text in DEMO_SCRIPT:
         print(f"🧑 대표님 > {user_text}\n")
@@ -187,6 +211,12 @@ def main() -> None:
         help="저장된 세션 체크포인트에서 회의를 이어서 재개",
     )
     parser.add_argument(
+        "--region",
+        nargs="+",
+        metavar="REGION",
+        help=f"실거래 데이터를 로딩할 지역 (예: 강남구 성동구). 지원: {', '.join(sorted(REGION_CODES))}",
+    )
+    parser.add_argument(
         "--list-sessions",
         action="store_true",
         help="저장된 세션 체크포인트 목록 출력 후 종료",
@@ -200,12 +230,13 @@ def main() -> None:
     if not _check_api_key():
         sys.exit(1)
 
+    regions = args.region
     if args.resume:
         asyncio.run(_run_resume(args.resume))
     elif args.demo:
-        asyncio.run(_run_demo(use_context=args.context))
+        asyncio.run(_run_demo(use_context=args.context, regions=regions))
     else:
-        asyncio.run(_run_interactive(use_context=args.context))
+        asyncio.run(_run_interactive(use_context=args.context, regions=regions))
 
 
 if __name__ == "__main__":

@@ -17,10 +17,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from personas import AGENT_CONFIG  # noqa: E402
+from real_estate import format_for_agents, get_multi_region_data  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MEETINGS_DIR = REPO_ROOT / "meetings"
 DEMO_TOPIC = "강남 오피스텔 투자 검토"
+DEMO_REGIONS = ["강남구", "성동구", "강서구"]
 
 BANNER = r"""
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -173,7 +175,14 @@ def _print_turn(turn_no: int, turn: dict[str, str]) -> None:
 
 def main() -> None:
     print(BANNER)
-    print(f"📌 데모 안건: {DEMO_TOPIC}\n")
+    print(f"📌 데모 안건: {DEMO_TOPIC}")
+    print(f"📈 비교 권역: {', '.join(DEMO_REGIONS)}\n")
+
+    summaries = get_multi_region_data(DEMO_REGIONS)
+    market_text = format_for_agents(summaries)
+    print(market_text)
+    print()
+
     for i, turn in enumerate(MOCK_TURNS, start=1):
         _print_turn(i, turn)
 
