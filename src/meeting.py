@@ -1,17 +1,17 @@
-"""Meeting orchestrator: 4 agents collaborating through the Anthropic API.
+"""Meeting orchestrator: C-suite agents collaborating through the Anthropic API.
 
-Stage 1 design decisions:
-- 3 speakers (실무형/레드팀/멘토) respond **in parallel** per user turn (latency win)
-- 서기(Clerk) runs once at the end in batch mode to produce a Markdown meeting log
+Architecture:
+- 3 C-suite (CFO/CSO/고문) respond **in parallel** per user turn
+- 비서실장(Clerk) runs once at the end in batch mode to produce meeting minutes
 - Each agent sees a rebuilt conversation history where its OWN past turns are
   'assistant' messages and everything else (user + other agents) is folded into
-  'user' messages — this is required by the Anthropic Messages API shape.
+  'user' messages — required by the Anthropic Messages API shape.
 
-Stage 2 additions (회의 지속성):
+Continuity features:
 - Past meeting context auto-loaded via `Meeting.with_context(topic)`
 - Session checkpointing after every turn (`checkpoint()` → `.sessions/*.json`)
 - Crash resume via `Meeting.from_session(session_id)`
-- Finalized meeting log gets Obsidian-compatible YAML frontmatter
+- Finalized meeting log gets YAML frontmatter
 """
 from __future__ import annotations
 

@@ -1,20 +1,20 @@
-"""CLI entry point for the text-based meeting prototype.
+"""CLI entry point for the text-based real estate investment advisory system.
 
 Usage:
     export ANTHROPIC_API_KEY=sk-ant-...
     python src/main.py
 
-    # Gangnam cafe demo scenario
+    # Gangnam officetel demo scenario
     python src/main.py --demo
 
-    # Start a new meeting and auto-load relevant past meetings (Stage 2)
+    # Start a new meeting and auto-load relevant past meetings
     python src/main.py --context
 
     # List stored session checkpoints
     python src/main.py --list-sessions
 
     # Resume a crashed meeting
-    python src/main.py --resume 2026-04-13-1530-강남-카페-창업-검토
+    python src/main.py --resume <session-id>
 """
 from __future__ import annotations
 
@@ -38,19 +38,18 @@ from meeting import Meeting  # noqa: E402
 
 BANNER = r"""
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   🎙  말하는 비서실 (TalkFile) — Stage 2 텍스트 프로토타입
-         (과거 회의 컨텍스트 + 세션 체크포인트)
+   🏢  Data 기반 Multi-Agent 부동산 투자 자문 시스템
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  참석: 📊 실무형(CFO)  🔴 레드팀(CSO)  🧭 멘토(CHO)  📝 서기(기록)
+  참석: 📊 CFO(재무총괄)  🔴 CSO(전략총괄)  🧭 고문(자문역)  📝 비서실장
   종료: /end  또는  quit
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 
-DEMO_TOPIC = "강남 카페 창업 검토"
+DEMO_TOPIC = "강남 오피스텔 투자 검토"
 DEMO_SCRIPT = [
-    "강남에 작은 카페 하나 열어볼까 고민 중이야.",
-    "초기 자본은 2억 정도 생각하고 있고, 본업은 그대로 유지할 생각이야.",
-    "그럼 유동인구보다 동네 단골이 모이는 골목 입지가 나을까?",
+    "강남 오피스텔 수익률 3%면 낮은 거 아냐?",
+    "월세 수익 목적이야. 대출 60% 끼고 월 150만원 정도 나오면 좋겠어.",
+    "그럼 강남 말고 성수나 마곡 쪽은 어때?",
 ]
 
 
@@ -86,7 +85,7 @@ async def _run_interactive(*, use_context: bool = False) -> None:
 
     print(f"\n📌 안건: {topic}")
     print(f"🗂  세션 ID: {meeting.session_id}")
-    print("대표님, 자유롭게 말씀하세요. 3인이 동시에 응답합니다.\n")
+    print("대표님, 자유롭게 말씀하세요. CFO·CSO·고문이 동시에 응답합니다.\n")
 
     await _meeting_loop(meeting)
     await _finalize(meeting)
@@ -171,11 +170,11 @@ def _print_session_list() -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="말하는 비서실 Stage 2 CLI")
+    parser = argparse.ArgumentParser(description="부동산 투자 자문 시스템 CLI")
     parser.add_argument(
         "--demo",
         action="store_true",
-        help="강남 카페 창업 검토 데모 시나리오를 자동 실행",
+        help="강남 오피스텔 투자 검토 데모 시나리오를 자동 실행",
     )
     parser.add_argument(
         "--context",
