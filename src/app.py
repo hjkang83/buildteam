@@ -31,6 +31,7 @@ from yield_analyzer import (
     analyze_multi_region,
     format_analysis_for_agents,
 )
+from scenario import format_full_scenario_for_agents
 
 
 st.set_page_config(
@@ -137,12 +138,13 @@ if start_btn:
         st.error("❌ 회의 안건을 입력해 주세요.")
         st.stop()
 
-    market_data, yield_data = "", ""
+    market_data, yield_data, scenario_data = "", "", ""
     if selected_regions:
         summaries = get_multi_region_data(selected_regions)
         market_data = format_for_agents(summaries)
         analyses = analyze_multi_region(summaries, invest_params)
         yield_data = format_analysis_for_agents(analyses)
+        scenario_data = format_full_scenario_for_agents(summaries, invest_params)
 
     file_data = ""
     if uploaded_files:
@@ -166,6 +168,7 @@ if start_btn:
         topic,
         market_data=market_data,
         yield_data=yield_data,
+        scenario_data=scenario_data,
         file_data=file_data,
     )
     st.session_state["meeting"] = meeting
@@ -177,6 +180,8 @@ if start_btn:
         init_msgs.append({"role": "system", "content": market_data, "type": "market"})
     if yield_data:
         init_msgs.append({"role": "system", "content": yield_data, "type": "yield"})
+    if scenario_data:
+        init_msgs.append({"role": "system", "content": scenario_data, "type": "scenario"})
     if file_data:
         init_msgs.append({"role": "system", "content": file_data, "type": "file"})
     st.session_state["messages"] = init_msgs
@@ -207,10 +212,12 @@ for msg in messages:
         type_labels = {
             "market": "📈 실거래 데이터",
             "yield": "📊 수익률 분석",
+            "scenario": "🔮 시나리오 시뮬레이션",
             "file": "📎 업로드 파일",
         }
-        label = type_labels.get(msg.get("type", ""), "📋 데이터")
-        with st.expander(label, expanded=msg.get("type") == "yield"):
+        msg_type = msg.get("type", "")
+        label = type_labels.get(msg_type, "📋 데이터")
+        with st.expander(label, expanded=msg_type in ("yield", "scenario")):
             st.text(msg["content"])
     elif msg["role"] == "user":
         with st.chat_message("user", avatar="🧑"):

@@ -42,6 +42,7 @@ from yield_analyzer import (
     analyze_multi_region,
     format_analysis_for_agents,
 )
+from scenario import format_full_scenario_for_agents
 
 MEETINGS_DIR = Path(__file__).resolve().parent.parent / "meetings"
 SPEAKERS: list[str] = ["practitioner", "redteam", "mentor"]
@@ -89,6 +90,7 @@ class Meeting:
         past_context: str = "",
         market_data: str = "",
         yield_data: str = "",
+        scenario_data: str = "",
         file_data: str = "",
         session_id: str | None = None,
         started_at: datetime | None = None,
@@ -100,6 +102,7 @@ class Meeting:
         self.past_context = past_context
         self.market_data = market_data
         self.yield_data = yield_data
+        self.scenario_data = scenario_data
         self.file_data = file_data
         self.session_id = session_id or _make_session_id(self.started_at, topic)
 
@@ -119,6 +122,8 @@ class Meeting:
                 self.transcript.append({"role": "user", "text": market_data})
             if yield_data:
                 self.transcript.append({"role": "user", "text": yield_data})
+            if scenario_data:
+                self.transcript.append({"role": "user", "text": scenario_data})
             if file_data:
                 self.transcript.append({"role": "user", "text": file_data})
             self.transcript.append(
@@ -133,13 +138,14 @@ class Meeting:
     def _build_region_blocks(
         regions: list[str],
         params: InvestmentParams | None = None,
-    ) -> tuple[str, str]:
-        """Return (market_data, yield_data) for given regions."""
+    ) -> tuple[str, str, str]:
+        """Return (market_data, yield_data, scenario_data) for given regions."""
         summaries = get_multi_region_data(regions)
         market = format_for_agents(summaries)
         analyses = analyze_multi_region(summaries, params)
         yld = format_analysis_for_agents(analyses)
-        return market, yld
+        scn = format_full_scenario_for_agents(summaries, params)
+        return market, yld, scn
 
     @classmethod
     def with_context(
@@ -155,11 +161,11 @@ class Meeting:
         and optional real estate market data + yield analysis."""
         relevant = find_relevant_meetings(topic, limit=limit)
         past = build_context_block(relevant)
-        market, yld = "", ""
+        market, yld, scn = "", "", ""
         if regions:
-            market, yld = cls._build_region_blocks(regions, params)
+            market, yld, scn = cls._build_region_blocks(regions, params)
         return cls(topic, model=model, past_context=past,
-                   market_data=market, yield_data=yld)
+                   market_data=market, yield_data=yld, scenario_data=scn)
 
     @classmethod
     def with_market_data(
@@ -170,9 +176,10 @@ class Meeting:
         params: InvestmentParams | None = None,
         model: str | None = None,
     ) -> "Meeting":
-        """Start a new meeting with real estate market data + yield analysis."""
-        market, yld = cls._build_region_blocks(regions, params)
-        return cls(topic, model=model, market_data=market, yield_data=yld)
+        """Start a new meeting with real estate market data + yield + scenario."""
+        market, yld, scn = cls._build_region_blocks(regions, params)
+        return cls(topic, model=model, market_data=market,
+                   yield_data=yld, scenario_data=scn)
 
     @classmethod
     def with_files(
@@ -184,18 +191,18 @@ class Meeting:
         params: InvestmentParams | None = None,
         model: str | None = None,
     ) -> "Meeting":
-        """Start a new meeting with uploaded file data (and optional market/yield data)."""
+        """Start a new meeting with uploaded file data (and optional market/yield/scenario)."""
         from pathlib import Path as P
         file_texts: list[tuple[str, str]] = []
         for fp in file_paths:
             text = parse_file(fp)
             file_texts.append((P(fp).name, text))
         file_block = format_files_for_agents(file_texts)
-        market, yld = "", ""
+        market, yld, scn = "", "", ""
         if regions:
-            market, yld = cls._build_region_blocks(regions, params)
+            market, yld, scn = cls._build_region_blocks(regions, params)
         return cls(topic, model=model, market_data=market,
-                   yield_data=yld, file_data=file_block)
+                   yield_data=yld, scenario_data=scn, file_data=file_block)
 
     @classmethod
     def from_session(cls, session_id: str) -> "Meeting | None":
@@ -210,6 +217,7 @@ class Meeting:
             past_context=data.get("past_context", ""),
             market_data=data.get("market_data", ""),
             yield_data=data.get("yield_data", ""),
+            scenario_data=data.get("scenario_data", ""),
             file_data=data.get("file_data", ""),
             session_id=session_id,
             started_at=started_at,
@@ -270,6 +278,7 @@ class Meeting:
             "past_context": self.past_context,
             "market_data": self.market_data,
             "yield_data": self.yield_data,
+            "scenario_data": self.scenario_data,
             "file_data": self.file_data,
             "transcript": self.transcript,
         }
