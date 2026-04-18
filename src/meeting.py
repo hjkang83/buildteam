@@ -31,7 +31,11 @@ from archive import (
     load_session,
     save_session,
 )
-from personas import AGENT_CONFIG, build_system_prompt
+from consensus import detect_consensus, build_challenge_prompt
+from personas import (
+    AGENT_CONFIG, build_system_prompt,
+    build_diversity_reminder, detect_used_angles,
+)
 from real_estate import format_for_agents, get_multi_region_data
 from file_parser import (
     format_for_agents as format_files_for_agents,
@@ -111,6 +115,8 @@ class Meeting:
             k: Agent(k, self.client, self.model) for k in SPEAKERS
         }
         self.clerk: Agent = Agent(CLERK_KEY, self.client, self.model)
+        self.angle_tracker: dict[str, list[str]] = {k: [] for k in SPEAKERS}
+        self.auto_challenge: bool = True
 
         if transcript is not None:
             self.transcript = transcript
@@ -211,7 +217,7 @@ class Meeting:
         if data is None:
             return None
         started_at = datetime.fromisoformat(data["started_at"])
-        return cls(
+        m = cls(
             topic=data["topic"],
             model=data.get("model"),
             past_context=data.get("past_context", ""),
@@ -223,6 +229,9 @@ class Meeting:
             started_at=started_at,
             transcript=data.get("transcript", []),
         )
+        if "angle_tracker" in data:
+            m.angle_tracker = data["angle_tracker"]
+        return m
 
     # ------------------------------------------------------------------
     # Turn handling
@@ -231,7 +240,61 @@ class Meeting:
     async def user_says(self, text: str) -> list[dict[str, Any]]:
         """Record user input and collect parallel responses from the 3 speakers."""
         self.transcript.append({"role": "user", "text": text})
+        new_turns = await self._gather_responses()
 
+        if self.auto_challenge:
+            is_consensus, ctype = detect_consensus(new_turns)
+            if is_consensus:
+                challenge = build_challenge_prompt(ctype)
+                if challenge:
+                    self.transcript.append(
+                        {"role": "user", "text": challenge, "meta": "challenge"}
+                    )
+                    extra = await self._gather_responses()
+                    new_turns.extend(extra)
+
+        try:
+            self.checkpoint()
+        except OSError:
+            pass
+        return new_turns
+
+    async def user_says_with_debate(
+        self, text: str, rounds: int = 2,
+    ) -> list[list[dict[str, Any]]]:
+        """Multi-round debate: agents respond, then respond to each other."""
+        self.transcript.append({"role": "user", "text": text})
+        all_rounds: list[list[dict[str, Any]]] = []
+
+        for rnd in range(1, rounds + 1):
+            if rnd > 1:
+                nudge = (
+                    f"[토론 라운드 {rnd}/{rounds}] 다른 참석자들의 발언을 참고하여, "
+                    "반론·보충·발전된 의견을 제시하세요. 이전 발언을 반복하지 마세요."
+                )
+                self.transcript.append(
+                    {"role": "user", "text": nudge, "meta": "debate_nudge"}
+                )
+
+            turns = await self._gather_responses()
+            all_rounds.append(turns)
+
+            is_consensus, ctype = detect_consensus(turns)
+            if is_consensus and rnd < rounds:
+                challenge = build_challenge_prompt(ctype)
+                if challenge:
+                    self.transcript.append(
+                        {"role": "user", "text": challenge, "meta": "challenge"}
+                    )
+
+        try:
+            self.checkpoint()
+        except OSError:
+            pass
+        return all_rounds
+
+    async def _gather_responses(self) -> list[dict[str, Any]]:
+        """Collect parallel responses from all speakers."""
         tasks = [
             self.speakers[key].respond(self._messages_for_agent(key))
             for key in SPEAKERS
@@ -256,12 +319,11 @@ class Meeting:
             self.transcript.append(turn)
             new_turns.append(turn)
 
-        # Stage 2: checkpoint after every turn so a crash loses ≤ 1 turn
-        try:
-            self.checkpoint()
-        except OSError:
-            # Checkpointing is best-effort; never block the meeting flow
-            pass
+            used = detect_used_angles(key, text_out)
+            for angle in used:
+                if angle not in self.angle_tracker[key]:
+                    self.angle_tracker[key].append(angle)
+
         return new_turns
 
     # ------------------------------------------------------------------
@@ -281,6 +343,7 @@ class Meeting:
             "scenario_data": self.scenario_data,
             "file_data": self.file_data,
             "transcript": self.transcript,
+            "angle_tracker": self.angle_tracker,
         }
         return save_session(self.session_id, data)
 
@@ -310,11 +373,18 @@ class Meeting:
 
         flush_buffer()
 
+        reminder = build_diversity_reminder(
+            agent_key, self.angle_tracker.get(agent_key, [])
+        )
+
         # Last message must be 'user' for the model to produce a new response
         if not messages or messages[-1]["role"] != "user":
+            suffix = f" {reminder}" if reminder else ""
             messages.append(
-                {"role": "user", "content": "이제 당신이 발언할 차례입니다."}
+                {"role": "user", "content": f"이제 당신이 발언할 차례입니다.{suffix}"}
             )
+        elif reminder:
+            messages[-1]["content"] += f"\n{reminder}"
 
         # First message must be 'user' in Anthropic API
         if messages and messages[0]["role"] == "assistant":

@@ -9,9 +9,12 @@ API 키가 없거나 호출 실패 시, Gold Standard 기반 샘플 데이터를
 from __future__ import annotations
 
 import os
+import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any
+from urllib.error import URLError
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
@@ -26,8 +29,18 @@ REGION_CODES: dict[str, str] = {
     "영등포구": "11560",
 }
 
-TRADE_API_URL = "http://openapi.molit.go.kr/OpenAPI_ToolInstall498/service/rest/RTMSOBJSvc/getRTMSDataSvcOffiTrade"
-RENT_API_URL = "http://openapi.molit.go.kr/OpenAPI_ToolInstallPack498/service/rest/RTMSOBJSvc/getRTMSDataSvcOffiRent"
+OFFI_TRADE_URL = "http://openapi.molit.go.kr/OpenAPI_ToolInstall498/service/rest/RTMSOBJSvc/getRTMSDataSvcOffiTrade"
+OFFI_RENT_URL = "http://openapi.molit.go.kr/OpenAPI_ToolInstallPack498/service/rest/RTMSOBJSvc/getRTMSDataSvcOffiRent"
+APT_TRADE_URL = "http://openapi.molit.go.kr:8081/OpenAPI_ToolInstall498/service/rest/RTMSOBJSvc/getRTMSDataSvcAptTrade"
+APT_RENT_URL = "http://openapi.molit.go.kr:8081/OpenAPI_ToolInstallPack498/service/rest/RTMSOBJSvc/getRTMSDataSvcAptRent"
+
+# backward compat aliases
+TRADE_API_URL = OFFI_TRADE_URL
+RENT_API_URL = OFFI_RENT_URL
+
+PROPERTY_TYPES = ("officetel", "apartment")
+MAX_RETRIES = 3
+RETRY_BACKOFF = 2  # seconds
 
 
 @dataclass
@@ -75,6 +88,7 @@ class RegionSummary:
     trade_records: list[TradeRecord] = field(default_factory=list)
     rent_records: list[RentRecord] = field(default_factory=list)
     is_sample: bool = False
+    property_type: str = "officetel"
 
     @property
     def avg_trade_price(self) -> int:
@@ -98,41 +112,76 @@ class RegionSummary:
 
 
 # ------------------------------------------------------------------
-# API 호출
+# API 호출 (with retry + caching)
 # ------------------------------------------------------------------
 
+_cache: dict[str, Any] = {}
+_cache_ttl: dict[str, float] = {}
+CACHE_SECONDS = 3600  # 1시간
 
-def fetch_trades(region_code: str, deal_ym: str, api_key: str) -> list[TradeRecord]:
+
+def _fetch_with_retry(url: str, max_retries: int = MAX_RETRIES) -> str:
+    for attempt in range(max_retries):
+        try:
+            with urlopen(url, timeout=10) as resp:
+                return resp.read().decode("utf-8")
+        except (URLError, TimeoutError):
+            if attempt < max_retries - 1:
+                time.sleep(RETRY_BACKOFF * (attempt + 1))
+    raise URLError(f"API 호출 {max_retries}회 재시도 실패: {url[:80]}")
+
+
+def _cached_fetch(cache_key: str, url: str) -> str:
+    now = time.time()
+    if cache_key in _cache and now - _cache_ttl.get(cache_key, 0) < CACHE_SECONDS:
+        return _cache[cache_key]
+    data = _fetch_with_retry(url)
+    _cache[cache_key] = data
+    _cache_ttl[cache_key] = now
+    return data
+
+
+def fetch_trades(
+    region_code: str, deal_ym: str, api_key: str,
+    property_type: str = "officetel",
+) -> list[TradeRecord]:
+    base_url = APT_TRADE_URL if property_type == "apartment" else OFFI_TRADE_URL
     params = {
         "serviceKey": api_key,
         "LAWD_CD": region_code,
         "DEAL_YMD": deal_ym,
     }
-    url = f"{TRADE_API_URL}?{urlencode(params)}"
-    with urlopen(url, timeout=10) as resp:
-        xml_data = resp.read().decode("utf-8")
-    return _parse_trade_xml(xml_data)
+    url = f"{base_url}?{urlencode(params)}"
+    cache_key = f"trade:{property_type}:{region_code}:{deal_ym}"
+    xml_data = _cached_fetch(cache_key, url)
+    name_tag = "아파트" if property_type == "apartment" else "단지"
+    return _parse_trade_xml(xml_data, name_tag=name_tag)
 
 
-def fetch_rents(region_code: str, deal_ym: str, api_key: str) -> list[RentRecord]:
+def fetch_rents(
+    region_code: str, deal_ym: str, api_key: str,
+    property_type: str = "officetel",
+) -> list[RentRecord]:
+    base_url = APT_RENT_URL if property_type == "apartment" else OFFI_RENT_URL
     params = {
         "serviceKey": api_key,
         "LAWD_CD": region_code,
         "DEAL_YMD": deal_ym,
     }
-    url = f"{RENT_API_URL}?{urlencode(params)}"
-    with urlopen(url, timeout=10) as resp:
-        xml_data = resp.read().decode("utf-8")
-    return _parse_rent_xml(xml_data)
+    url = f"{base_url}?{urlencode(params)}"
+    cache_key = f"rent:{property_type}:{region_code}:{deal_ym}"
+    xml_data = _cached_fetch(cache_key, url)
+    name_tag = "아파트" if property_type == "apartment" else "단지"
+    return _parse_rent_xml(xml_data, name_tag=name_tag)
 
 
-def _parse_trade_xml(xml_data: str) -> list[TradeRecord]:
+def _parse_trade_xml(xml_data: str, name_tag: str = "단지") -> list[TradeRecord]:
     root = ET.fromstring(xml_data)
     records: list[TradeRecord] = []
     for item in root.iter("item"):
         records.append(TradeRecord(
             district=_text(item, "법정동"),
-            name=_text(item, "단지"),
+            name=_text(item, name_tag),
             area=float(_text(item, "전용면적") or "0"),
             floor=int(_text(item, "층") or "0"),
             price=int(_text(item, "거래금액", "").replace(",", "").strip() or "0"),
@@ -143,13 +192,13 @@ def _parse_trade_xml(xml_data: str) -> list[TradeRecord]:
     return records
 
 
-def _parse_rent_xml(xml_data: str) -> list[RentRecord]:
+def _parse_rent_xml(xml_data: str, name_tag: str = "단지") -> list[RentRecord]:
     root = ET.fromstring(xml_data)
     records: list[RentRecord] = []
     for item in root.iter("item"):
         records.append(RentRecord(
             district=_text(item, "법정동"),
-            name=_text(item, "단지"),
+            name=_text(item, name_tag),
             area=float(_text(item, "전용면적") or "0"),
             floor=int(_text(item, "층") or "0"),
             deposit=int(_text(item, "보증금", "").replace(",", "").strip() or "0"),
@@ -175,6 +224,7 @@ def get_region_data(
     region_name: str,
     deal_ym: str | None = None,
     api_key: str | None = None,
+    property_type: str = "officetel",
 ) -> RegionSummary:
     """지역 실거래 데이터 조회. API 키 없으면 샘플 데이터 반환."""
     api_key = api_key or os.getenv("DATA_GO_KR_API_KEY")
@@ -190,26 +240,28 @@ def get_region_data(
 
     if api_key and region_code:
         try:
-            trades = fetch_trades(region_code, deal_ym, api_key)
-            rents = fetch_rents(region_code, deal_ym, api_key)
+            trades = fetch_trades(region_code, deal_ym, api_key, property_type)
+            rents = fetch_rents(region_code, deal_ym, api_key, property_type)
             return RegionSummary(
                 region=region_name,
                 deal_month=deal_ym,
                 trade_records=trades,
                 rent_records=rents,
                 is_sample=False,
+                property_type=property_type,
             )
         except Exception:
             pass
 
-    return _get_sample_data(region_name, deal_ym)
+    return _get_sample_data(region_name, deal_ym, property_type)
 
 
 def get_multi_region_data(
     regions: list[str],
     deal_ym: str | None = None,
+    property_type: str = "officetel",
 ) -> list[RegionSummary]:
-    return [get_region_data(r, deal_ym) for r in regions]
+    return [get_region_data(r, deal_ym, property_type=property_type) for r in regions]
 
 
 # ------------------------------------------------------------------
@@ -321,13 +373,59 @@ _SAMPLE_DATA: dict[str, dict[str, Any]] = {
 }
 
 
-def _get_sample_data(region_name: str, deal_ym: str) -> RegionSummary:
-    data = _SAMPLE_DATA.get(region_name)
+_APT_SAMPLE_DATA: dict[str, dict[str, Any]] = {
+    "강남구": {
+        "trades": [
+            {"district": "대치동", "name": "래미안대치팰리스", "area": 84.9, "floor": 15, "price": 280000, "year": 2026, "month": 2, "day": 12},
+            {"district": "도곡동", "name": "도곡렉슬", "area": 59.9, "floor": 8, "price": 195000, "year": 2026, "month": 2, "day": 5},
+            {"district": "삼성동", "name": "삼성래미안", "area": 114.6, "floor": 20, "price": 350000, "year": 2026, "month": 1, "day": 28},
+            {"district": "역삼동", "name": "역삼자이", "area": 76.3, "floor": 11, "price": 230000, "year": 2026, "month": 1, "day": 15},
+        ],
+        "rents": [
+            {"district": "대치동", "name": "래미안대치팰리스", "area": 84.9, "floor": 12, "deposit": 50000, "monthly_rent": 250, "year": 2026, "month": 2, "day": 10},
+            {"district": "도곡동", "name": "도곡렉슬", "area": 59.9, "floor": 6, "deposit": 30000, "monthly_rent": 180, "year": 2026, "month": 2, "day": 3},
+            {"district": "삼성동", "name": "삼성래미안", "area": 114.6, "floor": 18, "deposit": 70000, "monthly_rent": 350, "year": 2026, "month": 1, "day": 22},
+            {"district": "역삼동", "name": "역삼자이", "area": 76.3, "floor": 9, "deposit": 40000, "monthly_rent": 200, "year": 2026, "month": 1, "day": 10},
+        ],
+    },
+    "성동구": {
+        "trades": [
+            {"district": "성수동1가", "name": "서울숲트리마제", "area": 84.5, "floor": 22, "price": 210000, "year": 2026, "month": 2, "day": 18},
+            {"district": "옥수동", "name": "옥수파크힐스", "area": 59.7, "floor": 10, "price": 155000, "year": 2026, "month": 2, "day": 8},
+            {"district": "행당동", "name": "한진타운", "area": 76.8, "floor": 7, "price": 128000, "year": 2026, "month": 1, "day": 20},
+        ],
+        "rents": [
+            {"district": "성수동1가", "name": "서울숲트리마제", "area": 84.5, "floor": 20, "deposit": 45000, "monthly_rent": 230, "year": 2026, "month": 2, "day": 15},
+            {"district": "옥수동", "name": "옥수파크힐스", "area": 59.7, "floor": 8, "deposit": 25000, "monthly_rent": 150, "year": 2026, "month": 2, "day": 5},
+            {"district": "행당동", "name": "한진타운", "area": 76.8, "floor": 5, "deposit": 15000, "monthly_rent": 110, "year": 2026, "month": 1, "day": 18},
+        ],
+    },
+    "강서구": {
+        "trades": [
+            {"district": "마곡동", "name": "마곡엠밸리7단지", "area": 84.8, "floor": 12, "price": 118000, "year": 2026, "month": 2, "day": 14},
+            {"district": "마곡동", "name": "마곡힐스테이트", "area": 59.9, "floor": 8, "price": 92000, "year": 2026, "month": 2, "day": 6},
+            {"district": "등촌동", "name": "등촌주공5단지", "area": 49.7, "floor": 5, "price": 72000, "year": 2026, "month": 1, "day": 25},
+        ],
+        "rents": [
+            {"district": "마곡동", "name": "마곡엠밸리7단지", "area": 84.8, "floor": 10, "deposit": 20000, "monthly_rent": 120, "year": 2026, "month": 2, "day": 12},
+            {"district": "마곡동", "name": "마곡힐스테이트", "area": 59.9, "floor": 6, "deposit": 15000, "monthly_rent": 90, "year": 2026, "month": 2, "day": 4},
+            {"district": "등촌동", "name": "등촌주공5단지", "area": 49.7, "floor": 3, "deposit": 10000, "monthly_rent": 60, "year": 2026, "month": 1, "day": 22},
+        ],
+    },
+}
+
+
+def _get_sample_data(
+    region_name: str, deal_ym: str, property_type: str = "officetel",
+) -> RegionSummary:
+    source = _APT_SAMPLE_DATA if property_type == "apartment" else _SAMPLE_DATA
+    data = source.get(region_name)
     if not data:
         return RegionSummary(
             region=region_name,
             deal_month=deal_ym,
             is_sample=True,
+            property_type=property_type,
         )
 
     trades = [TradeRecord(**r) for r in data["trades"]]
@@ -338,4 +436,5 @@ def _get_sample_data(region_name: str, deal_ym: str) -> RegionSummary:
         trade_records=trades,
         rent_records=rents,
         is_sample=True,
+        property_type=property_type,
     )

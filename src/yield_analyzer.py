@@ -16,6 +16,30 @@ from typing import Any
 from real_estate import RegionSummary
 
 
+def compute_npv(cash_flows: list[float], rate: float) -> float:
+    return sum(cf / (1 + rate) ** t for t, cf in enumerate(cash_flows))
+
+
+def compute_irr(cash_flows: list[float], tol: float = 1e-6, max_iter: int = 200) -> float:
+    if not cash_flows or all(cf <= 0 for cf in cash_flows):
+        return float("-inf")
+    if all(cf >= 0 for cf in cash_flows):
+        return float("inf")
+    r = 0.1
+    for _ in range(max_iter):
+        npv = compute_npv(cash_flows, r)
+        dnpv = sum(-t * cf / (1 + r) ** (t + 1) for t, cf in enumerate(cash_flows))
+        if abs(dnpv) < 1e-12:
+            break
+        r_new = r - npv / dnpv
+        if r_new <= -1:
+            r_new = r / 2
+        if abs(r_new - r) < tol:
+            return round(r_new * 100, 2)
+        r = r_new
+    return round(r * 100, 2)
+
+
 @dataclass
 class InvestmentParams:
     """투자 시뮬레이션 파라미터."""
