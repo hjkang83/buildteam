@@ -36,6 +36,31 @@ AGENT_CONFIG = {
 }
 
 
+DIVERSITY_ANGLES: dict[str, list[str]] = {
+    "practitioner": ["수익률", "대출", "세금", "현금흐름", "감가상각", "비교"],
+    "redteam": ["타이밍", "입지", "경쟁", "정책", "시나리오", "하방", "전제", "대안"],
+    "mentor": ["목적", "명저", "관점", "장기", "메타", "우선순위", "유형", "철학"],
+}
+
+
+def build_diversity_reminder(agent_key: str, used_angles: list[str]) -> str:
+    all_angles = DIVERSITY_ANGLES.get(agent_key, [])
+    if not all_angles:
+        return ""
+    unused = [a for a in all_angles if a not in used_angles]
+    if not unused:
+        return ""
+    return (
+        f"[다양성 리마인더] 아직 사용하지 않은 관점: {', '.join(unused[:3])}. "
+        "이번 턴에는 이 중 하나를 시도해보세요."
+    )
+
+
+def detect_used_angles(agent_key: str, text: str) -> list[str]:
+    all_angles = DIVERSITY_ANGLES.get(agent_key, [])
+    return [a for a in all_angles if a in text]
+
+
 def load_persona_spec(agent_key: str) -> str:
     """Read the raw markdown persona specification."""
     cfg = AGENT_CONFIG[agent_key]
