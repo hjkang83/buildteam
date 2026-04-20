@@ -20,6 +20,8 @@ from personas import AGENT_CONFIG  # noqa: E402
 from real_estate import format_for_agents, get_multi_region_data  # noqa: E402
 from yield_analyzer import analyze_multi_region, format_analysis_for_agents  # noqa: E402
 from scenario import format_full_scenario_for_agents  # noqa: E402
+from cashflow import build_multi_cashflow, format_cashflow_for_agents  # noqa: E402
+from monte_carlo import run_multi_monte_carlo, format_monte_carlo_for_agents  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MEETINGS_DIR = REPO_ROOT / "meetings"
@@ -190,6 +192,13 @@ def main() -> None:
     scenario_text = format_full_scenario_for_agents(summaries)
     if scenario_text:
         print(scenario_text)
+
+    cf_tables = build_multi_cashflow(analyses)
+    cashflow_text = format_cashflow_for_agents(cf_tables)
+    print(cashflow_text)
+    mc_results = run_multi_monte_carlo(analyses)
+    mc_text = format_monte_carlo_for_agents(mc_results)
+    print(mc_text)
     print()
 
     for i, turn in enumerate(MOCK_TURNS, start=1):

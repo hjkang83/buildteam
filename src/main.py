@@ -36,9 +36,11 @@ from archive import list_sessions  # noqa: E402
 from file_parser import SUPPORTED_EXTENSIONS, parse_file  # noqa: E402
 from file_parser import format_for_agents as format_files_for_agents  # noqa: E402
 from meeting import Meeting  # noqa: E402
-from real_estate import REGION_CODES, format_for_agents, get_multi_region_data  # noqa: E402
+from real_estate import REGION_CODES, PROPERTY_TYPES, format_for_agents, get_multi_region_data  # noqa: E402
 from yield_analyzer import analyze_multi_region, format_analysis_for_agents  # noqa: E402
 from scenario import format_full_scenario_for_agents  # noqa: E402
+from cashflow import build_multi_cashflow, format_cashflow_for_agents  # noqa: E402
+from monte_carlo import run_multi_monte_carlo, format_monte_carlo_for_agents  # noqa: E402
 
 
 BANNER = r"""
@@ -99,6 +101,11 @@ async def _run_interactive(
     use_context: bool = False,
     regions: list[str] | None = None,
     files: list[str] | None = None,
+    property_type: str = "officetel",
+    use_cashflow: bool = False,
+    use_monte_carlo: bool = False,
+    debate_mode: bool = False,
+    debate_rounds: int = 2,
 ) -> None:
     print(BANNER)
     topic = input("이번 회의의 안건을 한 줄로 말해주세요 > ").strip()
@@ -107,9 +114,10 @@ async def _run_interactive(
         return
 
     market_data, yield_data, scenario_data = "", "", ""
+    cashflow_data, mc_data = "", ""
     if regions:
         print(f"\n📈 실거래 데이터 로딩 중... ({', '.join(regions)})")
-        summaries = get_multi_region_data(regions)
+        summaries = get_multi_region_data(regions, property_type=property_type)
         market_data = format_for_agents(summaries)
         print(market_data)
         analyses = analyze_multi_region(summaries)
@@ -119,11 +127,23 @@ async def _run_interactive(
         scenario_data = format_full_scenario_for_agents(summaries)
         if scenario_data:
             print(scenario_data)
+        if use_cashflow:
+            cf_tables = build_multi_cashflow(analyses)
+            cashflow_data = format_cashflow_for_agents(cf_tables)
+            print(cashflow_data)
+        if use_monte_carlo:
+            mc_results = run_multi_monte_carlo(analyses)
+            mc_data = format_monte_carlo_for_agents(mc_results)
+            print(mc_data)
         print()
 
     file_data = ""
     if files:
         file_data = _load_files(files)
+
+    all_data = "\n".join(filter(None, [
+        scenario_data, cashflow_data, mc_data,
+    ]))
 
     if use_context:
         meeting = Meeting.with_context(topic, regions=regions)
@@ -138,15 +158,17 @@ async def _run_interactive(
         meeting = Meeting.with_files(topic, files, regions=regions)
     elif market_data:
         meeting = Meeting(topic, market_data=market_data,
-                          yield_data=yield_data, scenario_data=scenario_data)
+                          yield_data=yield_data, scenario_data=all_data)
     else:
         meeting = Meeting(topic)
 
     print(f"\n📌 안건: {topic}")
     print(f"🗂  세션 ID: {meeting.session_id}")
+    mode_label = "토론 모드" if debate_mode else "일반 모드"
+    print(f"🗣  {mode_label}" + (f" ({debate_rounds}라운드)" if debate_mode else ""))
     print("대표님, 자유롭게 말씀하세요. CFO·CSO·고문이 동시에 응답합니다.\n")
 
-    await _meeting_loop(meeting)
+    await _meeting_loop(meeting, debate_mode=debate_mode, debate_rounds=debate_rounds)
     await _finalize(meeting)
 
 
@@ -165,7 +187,12 @@ async def _run_resume(session_id: str) -> None:
     await _finalize(meeting)
 
 
-async def _meeting_loop(meeting: Meeting) -> None:
+async def _meeting_loop(
+    meeting: Meeting,
+    *,
+    debate_mode: bool = False,
+    debate_rounds: int = 2,
+) -> None:
     while True:
         try:
             user_text = input("🧑 대표님 > ").strip()
@@ -178,21 +205,36 @@ async def _meeting_loop(meeting: Meeting) -> None:
             break
 
         print("\n(에이전트 응답 생성 중...)\n")
-        turns = await meeting.user_says(user_text)
-        _print_turns(turns)
+        if debate_mode:
+            all_rounds = await meeting.user_says_with_debate(
+                user_text, rounds=debate_rounds,
+            )
+            for rnd_idx, turns in enumerate(all_rounds, 1):
+                if len(all_rounds) > 1:
+                    print(f"── 라운드 {rnd_idx}/{len(all_rounds)} ──\n")
+                _print_turns(turns)
+        else:
+            turns = await meeting.user_says(user_text)
+            _print_turns(turns)
 
 
 async def _run_demo(
     *,
     use_context: bool = False,
     regions: list[str] | None = None,
+    property_type: str = "officetel",
+    use_cashflow: bool = False,
+    use_monte_carlo: bool = False,
+    debate_mode: bool = False,
+    debate_rounds: int = 2,
 ) -> None:
     print(BANNER)
     regions = regions or DEMO_REGIONS
     print(f"📌 데모 안건: {DEMO_TOPIC}")
-    print(f"📈 비교 권역: {', '.join(regions)}\n")
+    ptype_label = "아파트" if property_type == "apartment" else "오피스텔"
+    print(f"📈 비교 권역: {', '.join(regions)} ({ptype_label})\n")
 
-    summaries = get_multi_region_data(regions)
+    summaries = get_multi_region_data(regions, property_type=property_type)
     market_data = format_for_agents(summaries)
     print(market_data)
     analyses = analyze_multi_region(summaries)
@@ -202,19 +244,39 @@ async def _run_demo(
     scenario_data = format_full_scenario_for_agents(summaries)
     if scenario_data:
         print(scenario_data)
+
+    cashflow_data, mc_data = "", ""
+    if use_cashflow:
+        cf_tables = build_multi_cashflow(analyses)
+        cashflow_data = format_cashflow_for_agents(cf_tables)
+        print(cashflow_data)
+    if use_monte_carlo:
+        mc_results = run_multi_monte_carlo(analyses)
+        mc_data = format_monte_carlo_for_agents(mc_results)
+        print(mc_data)
     print()
 
+    all_data = "\n".join(filter(None, [scenario_data, cashflow_data, mc_data]))
     if use_context:
         meeting = Meeting.with_context(DEMO_TOPIC, regions=regions)
     else:
         meeting = Meeting(DEMO_TOPIC, market_data=market_data,
-                          yield_data=yield_data, scenario_data=scenario_data)
+                          yield_data=yield_data, scenario_data=all_data)
 
     for user_text in DEMO_SCRIPT:
         print(f"🧑 대표님 > {user_text}\n")
         print("(에이전트 응답 생성 중...)\n")
-        turns = await meeting.user_says(user_text)
-        _print_turns(turns)
+        if debate_mode:
+            all_rounds = await meeting.user_says_with_debate(
+                user_text, rounds=debate_rounds,
+            )
+            for rnd_idx, turns in enumerate(all_rounds, 1):
+                if len(all_rounds) > 1:
+                    print(f"── 라운드 {rnd_idx}/{len(all_rounds)} ──\n")
+                _print_turns(turns)
+        else:
+            turns = await meeting.user_says(user_text)
+            _print_turns(turns)
         print("─" * 60)
 
     await _finalize(meeting)
@@ -274,6 +336,34 @@ def main() -> None:
         help=f"회의에 참조할 파일 업로드 (지원: {', '.join(sorted(SUPPORTED_EXTENSIONS))})",
     )
     parser.add_argument(
+        "--property-type",
+        choices=list(PROPERTY_TYPES),
+        default="officetel",
+        help="매물 유형 (officetel 또는 apartment, 기본: officetel)",
+    )
+    parser.add_argument(
+        "--cashflow",
+        action="store_true",
+        help="10년 현금흐름 프로젝션을 에이전트 컨텍스트에 추가",
+    )
+    parser.add_argument(
+        "--monte-carlo",
+        action="store_true",
+        help="Monte Carlo 시뮬레이션 결과를 에이전트 컨텍스트에 추가",
+    )
+    parser.add_argument(
+        "--debate",
+        action="store_true",
+        help="다중 라운드 토론 모드 활성화",
+    )
+    parser.add_argument(
+        "--rounds",
+        type=int,
+        default=2,
+        choices=[1, 2, 3],
+        help="토론 라운드 수 (기본: 2, --debate와 함께 사용)",
+    )
+    parser.add_argument(
         "--list-sessions",
         action="store_true",
         help="저장된 세션 체크포인트 목록 출력 후 종료",
@@ -289,12 +379,21 @@ def main() -> None:
 
     regions = args.region
     files = args.file
+    extra = dict(
+        property_type=args.property_type,
+        use_cashflow=args.cashflow,
+        use_monte_carlo=args.monte_carlo,
+        debate_mode=args.debate,
+        debate_rounds=args.rounds,
+    )
     if args.resume:
         asyncio.run(_run_resume(args.resume))
     elif args.demo:
-        asyncio.run(_run_demo(use_context=args.context, regions=regions))
+        asyncio.run(_run_demo(use_context=args.context, regions=regions, **extra))
     else:
-        asyncio.run(_run_interactive(use_context=args.context, regions=regions, files=files))
+        asyncio.run(_run_interactive(
+            use_context=args.context, regions=regions, files=files, **extra,
+        ))
 
 
 if __name__ == "__main__":
