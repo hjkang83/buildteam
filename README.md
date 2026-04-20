@@ -281,7 +281,7 @@ buildteam/
 │   └── demo_mock.py           # Mock 데모 (API 불필요)
 ├── tests/                     # pytest 테스트 스위트 (212 tests)
 ├── meetings/                  # 회의록 저장 디렉토리
-├── MANIFEST.md                # 핵심 가치와 설계 원칙
+├── MANIFESTO.md                # 핵심 가치와 설계 원칙
 ├── WHYTREE.md                 # Why Tree 분석
 ├── PREMORTEM.md               # 사전 부검
 └── glossary.md                # 용어집
