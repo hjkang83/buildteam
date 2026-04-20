@@ -22,6 +22,9 @@ from yield_analyzer import analyze_multi_region, format_analysis_for_agents  # n
 from scenario import format_full_scenario_for_agents  # noqa: E402
 from cashflow import build_multi_cashflow, format_cashflow_for_agents  # noqa: E402
 from monte_carlo import run_multi_monte_carlo, format_monte_carlo_for_agents  # noqa: E402
+from tax import compute_multi_tax_summary, format_tax_for_agents  # noqa: E402
+from scorecard import build_multi_scorecard, format_scorecard_for_agents  # noqa: E402
+from portfolio import compare_portfolios, format_portfolio_for_agents  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MEETINGS_DIR = REPO_ROOT / "meetings"
@@ -199,6 +202,16 @@ def main() -> None:
     mc_results = run_multi_monte_carlo(analyses)
     mc_text = format_monte_carlo_for_agents(mc_results)
     print(mc_text)
+
+    tax_summaries = compute_multi_tax_summary(analyses)
+    tax_text = format_tax_for_agents(tax_summaries)
+    print(tax_text)
+    cards = build_multi_scorecard(analyses, cf_tables, mc_results, tax_summaries)
+    score_text = format_scorecard_for_agents(cards)
+    print(score_text)
+    comparisons = compare_portfolios(analyses, cf_tables, mc_results)
+    port_text = format_portfolio_for_agents(comparisons)
+    print(port_text)
     print()
 
     for i, turn in enumerate(MOCK_TURNS, start=1):
