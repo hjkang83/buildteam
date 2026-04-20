@@ -41,6 +41,9 @@ from yield_analyzer import analyze_multi_region, format_analysis_for_agents  # n
 from scenario import format_full_scenario_for_agents  # noqa: E402
 from cashflow import build_multi_cashflow, format_cashflow_for_agents  # noqa: E402
 from monte_carlo import run_multi_monte_carlo, format_monte_carlo_for_agents  # noqa: E402
+from tax import compute_multi_tax_summary, format_tax_for_agents, TaxParams  # noqa: E402
+from scorecard import build_multi_scorecard, format_scorecard_for_agents  # noqa: E402
+from portfolio import compare_portfolios, format_portfolio_for_agents  # noqa: E402
 
 
 BANNER = r"""
@@ -104,6 +107,9 @@ async def _run_interactive(
     property_type: str = "officetel",
     use_cashflow: bool = False,
     use_monte_carlo: bool = False,
+    use_tax: bool = False,
+    use_scorecard: bool = False,
+    use_portfolio: bool = False,
     debate_mode: bool = False,
     debate_rounds: int = 2,
 ) -> None:
@@ -114,7 +120,8 @@ async def _run_interactive(
         return
 
     market_data, yield_data, scenario_data = "", "", ""
-    cashflow_data, mc_data = "", ""
+    cashflow_data, mc_data, tax_data, score_data, port_data = "", "", "", "", ""
+    cf_tables, mc_results, tax_summaries = None, None, None
     if regions:
         print(f"\n📈 실거래 데이터 로딩 중... ({', '.join(regions)})")
         summaries = get_multi_region_data(regions, property_type=property_type)
@@ -135,6 +142,18 @@ async def _run_interactive(
             mc_results = run_multi_monte_carlo(analyses)
             mc_data = format_monte_carlo_for_agents(mc_results)
             print(mc_data)
+        if use_tax:
+            tax_summaries = compute_multi_tax_summary(analyses)
+            tax_data = format_tax_for_agents(tax_summaries)
+            print(tax_data)
+        if use_scorecard:
+            cards = build_multi_scorecard(analyses, cf_tables, mc_results, tax_summaries)
+            score_data = format_scorecard_for_agents(cards)
+            print(score_data)
+        if use_portfolio and len(analyses) >= 2:
+            comparisons = compare_portfolios(analyses, cf_tables, mc_results)
+            port_data = format_portfolio_for_agents(comparisons)
+            print(port_data)
         print()
 
     file_data = ""
@@ -142,7 +161,7 @@ async def _run_interactive(
         file_data = _load_files(files)
 
     all_data = "\n".join(filter(None, [
-        scenario_data, cashflow_data, mc_data,
+        scenario_data, cashflow_data, mc_data, tax_data, score_data, port_data,
     ]))
 
     if use_context:
@@ -225,6 +244,9 @@ async def _run_demo(
     property_type: str = "officetel",
     use_cashflow: bool = False,
     use_monte_carlo: bool = False,
+    use_tax: bool = False,
+    use_scorecard: bool = False,
+    use_portfolio: bool = False,
     debate_mode: bool = False,
     debate_rounds: int = 2,
 ) -> None:
@@ -245,7 +267,8 @@ async def _run_demo(
     if scenario_data:
         print(scenario_data)
 
-    cashflow_data, mc_data = "", ""
+    cashflow_data, mc_data, tax_data, score_data, port_data = "", "", "", "", ""
+    cf_tables, mc_results, tax_summaries = None, None, None
     if use_cashflow:
         cf_tables = build_multi_cashflow(analyses)
         cashflow_data = format_cashflow_for_agents(cf_tables)
@@ -254,9 +277,23 @@ async def _run_demo(
         mc_results = run_multi_monte_carlo(analyses)
         mc_data = format_monte_carlo_for_agents(mc_results)
         print(mc_data)
+    if use_tax:
+        tax_summaries = compute_multi_tax_summary(analyses)
+        tax_data = format_tax_for_agents(tax_summaries)
+        print(tax_data)
+    if use_scorecard:
+        cards = build_multi_scorecard(analyses, cf_tables, mc_results, tax_summaries)
+        score_data = format_scorecard_for_agents(cards)
+        print(score_data)
+    if use_portfolio and len(analyses) >= 2:
+        comparisons = compare_portfolios(analyses, cf_tables, mc_results)
+        port_data = format_portfolio_for_agents(comparisons)
+        print(port_data)
     print()
 
-    all_data = "\n".join(filter(None, [scenario_data, cashflow_data, mc_data]))
+    all_data = "\n".join(filter(None, [
+        scenario_data, cashflow_data, mc_data, tax_data, score_data, port_data,
+    ]))
     if use_context:
         meeting = Meeting.with_context(DEMO_TOPIC, regions=regions)
     else:
@@ -352,6 +389,26 @@ def main() -> None:
         help="Monte Carlo 시뮬레이션 결과를 에이전트 컨텍스트에 추가",
     )
     parser.add_argument(
+        "--tax",
+        action="store_true",
+        help="세금 시뮬레이션 (취득세/보유세/양도세) 결과를 에이전트 컨텍스트에 추가",
+    )
+    parser.add_argument(
+        "--scorecard",
+        action="store_true",
+        help="투자 판단 스코어카드 (수익률/리스크/세금 종합 점수) 생성",
+    )
+    parser.add_argument(
+        "--portfolio",
+        action="store_true",
+        help="포트폴리오 분석 (다중 권역 조합 수익/리스크 비교)",
+    )
+    parser.add_argument(
+        "--full",
+        action="store_true",
+        help="모든 분석을 한 번에 실행 (cashflow + monte-carlo + tax + scorecard + portfolio)",
+    )
+    parser.add_argument(
         "--debate",
         action="store_true",
         help="다중 라운드 토론 모드 활성화",
@@ -379,10 +436,14 @@ def main() -> None:
 
     regions = args.region
     files = args.file
+    full = args.full
     extra = dict(
         property_type=args.property_type,
-        use_cashflow=args.cashflow,
-        use_monte_carlo=args.monte_carlo,
+        use_cashflow=args.cashflow or full,
+        use_monte_carlo=args.monte_carlo or full,
+        use_tax=args.tax or full,
+        use_scorecard=args.scorecard or full,
+        use_portfolio=args.portfolio or full,
         debate_mode=args.debate,
         debate_rounds=args.rounds,
     )
