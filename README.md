@@ -25,6 +25,9 @@ cp .env.example .env
 python src/main.py --demo                           # 강남 오피스텔 데모
 python src/main.py --region 강남구 성동구 강서구      # 실거래 데이터 + 수익률 분석
 python src/main.py --region 강남구 --file 매물.xlsx   # 파일 업로드 포함
+python src/main.py --demo --cashflow --monte-carlo  # 현금흐름 + Monte Carlo 포함
+python src/main.py --demo --debate --rounds 3       # 3라운드 토론 모드
+python src/main.py --demo --property-type apartment # 아파트 데이터로 데모
 
 # 3-B. Web UI 실행
 streamlit run src/app.py
@@ -212,7 +215,7 @@ pytest tests/ -v
 | 토론 | consensus + personas | 합의 감지, 확증편향 방지, 다양성 추적 |
 | 파일 | openpyxl + pdfplumber | Excel/PDF 파싱 |
 | Frontend | Streamlit | 멀티 에이전트 채팅 UI |
-| 테스트 | pytest (162 tests) | API 키 없이 전체 로직 검증 (API mock 포함) |
+| 테스트 | pytest (178 tests) | API 키 없이 전체 로직 검증 (API mock 포함) |
 
 ---
 
@@ -240,7 +243,7 @@ buildteam/
 │   ├── file_parser.py         # Excel/PDF 파서
 │   ├── archive.py             # 회의록 저장 + 세션 체크포인트
 │   └── demo_mock.py           # Mock 데모 (API 불필요)
-├── tests/                     # pytest 테스트 스위트 (162 tests)
+├── tests/                     # pytest 테스트 스위트 (178 tests)
 ├── meetings/                  # 회의록 저장 디렉토리
 ├── MANIFEST.md                # 핵심 가치와 설계 원칙
 ├── WHYTREE.md                 # Why Tree 분석
