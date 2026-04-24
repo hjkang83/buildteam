@@ -311,6 +311,33 @@ buildteam/
 
 ---
 
+## 배포
+
+### Streamlit Cloud (가장 간단)
+
+1. GitHub 리포지토리를 [Streamlit Cloud](https://share.streamlit.io)에 연결
+2. Main file path: `src/app.py`
+3. Secrets에 환경변수 추가:
+   ```
+   ANTHROPIC_API_KEY = "sk-ant-..."
+   DATA_GO_KR_API_KEY = "..."  # 선택사항 (없으면 샘플 데이터 사용)
+   ```
+
+### 로컬 실행
+
+```bash
+pip install -r requirements.txt
+cp .env.example .env  # API 키 입력
+streamlit run src/app.py
+```
+
+### CI
+
+GitHub Actions로 PR마다 `pytest tests/ -v` 자동 실행 (`.github/workflows/ci.yml`).
+Python 3.10/3.11/3.12 매트릭스 테스트.
+
+---
+
 ## 팀
 
 KAIST IMMS (정보경영프로그램) MBA 과정 — AI 인공지능 전략과 실습
