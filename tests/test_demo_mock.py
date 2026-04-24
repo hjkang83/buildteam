@@ -37,12 +37,12 @@ class TestMockData:
             has_risk = any(kw in turn["redteam"] for kw in risk_keywords)
             assert has_risk, "CSO(redteam) 응답에 리스크/반론이 없습니다"
 
-    def test_mentor_provides_perspective(self):
-        perspective_keywords = ["?", "인가요", "인지", "먼저", "본질", "기준",
-                                "목적", "질문"]
+    def test_mentor_provides_advisory(self):
+        advisory_keywords = ["적합", "분산", "포트폴리오", "권역", "리스크",
+                             "기준", "유리", "권합니다", "조합", "성향"]
         for turn in MOCK_TURNS:
-            has_perspective = any(kw in turn["mentor"] for kw in perspective_keywords)
-            assert has_perspective, "투자컨설턴트(mentor) 응답에 관점 제시가 없습니다"
+            has_advisory = any(kw in turn["mentor"] for kw in advisory_keywords)
+            assert has_advisory, "투자컨설턴트(mentor) 응답에 자문 의견이 없습니다"
 
 
 class TestMockMinutes:
