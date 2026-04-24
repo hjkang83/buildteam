@@ -23,6 +23,7 @@ except ImportError:
 
 from meeting import Meeting
 from personas import AGENT_CONFIG
+from archive import list_meetings
 from real_estate import REGION_CODES, PROPERTY_TYPES, format_for_agents, get_multi_region_data
 from file_parser import parse_file, SUPPORTED_EXTENSIONS
 from file_parser import format_for_agents as format_files_for_agents
@@ -158,6 +159,16 @@ with st.sidebar:
         cfg = AGENT_CONFIG[key]
         st.markdown(f"{cfg['emoji']} **{cfg['name']}** ({cfg['label']})")
 
+    past_meetings = list_meetings(include_mock=True)
+    if past_meetings:
+        with st.expander(f"📚 과거 회의록 ({len(past_meetings)}건)", expanded=False):
+            for m in past_meetings[:10]:
+                date_str = f"{m.date} {m.time}".strip()
+                st.markdown(f"**{m.topic}**  \n{date_str}")
+                if m.summary:
+                    st.caption(m.summary[:100] + ("..." if len(m.summary) > 100 else ""))
+                st.divider()
+
 
 # ------------------------------------------------------------------
 # 회의 시작
@@ -278,12 +289,24 @@ if mock_btn:
     analyses = analyze_multi_region(summaries)
     yield_data = format_analysis_for_agents(analyses)
     scenario_data = format_full_scenario_for_agents(summaries)
+    cf_tables = build_multi_cashflow(analyses)
+    mc_results = run_multi_monte_carlo(analyses)
+    tax_sums = compute_multi_tax_summary(analyses)
+    score_cards = build_multi_scorecard(analyses, cf_tables, mc_results, tax_sums)
+    port_comps = compare_portfolios(analyses, cf_tables, mc_results)
 
     meeting = Meeting(DEMO_TOPIC, market_data=market_data,
                       yield_data=yield_data, scenario_data=scenario_data)
     st.session_state["meeting"] = meeting
     st.session_state["mock_mode"] = True
     st.session_state["finalized"] = False
+    st.session_state["analyses"] = analyses
+    st.session_state["summaries"] = summaries
+    st.session_state["cf_tables"] = cf_tables
+    st.session_state["mc_results"] = mc_results
+    st.session_state["tax_summaries"] = tax_sums
+    st.session_state["scorecards"] = score_cards
+    st.session_state["portfolios"] = port_comps
 
     msgs: list[dict] = []
     if market_data:
@@ -373,7 +396,7 @@ for msg in messages:
 analyses_data = st.session_state.get("analyses", [])
 summaries_data = st.session_state.get("summaries", [])
 
-if analyses_data and not st.session_state.get("mock_mode"):
+if analyses_data:
     with st.expander("📊 시각화 차트", expanded=False):
         chart_tabs = st.tabs([
             "권역 비교", "민감도", "스트레스", "현금흐름",
