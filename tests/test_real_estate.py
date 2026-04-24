@@ -1,6 +1,7 @@
 """Tests for real_estate module."""
 from real_estate import (
     REGION_CODES,
+    REGION_GROUPS,
     TradeRecord,
     RentRecord,
     RegionSummary,
@@ -18,6 +19,30 @@ class TestRegionCodes:
     def test_codes_are_5_digits(self):
         for code in REGION_CODES.values():
             assert len(code) == 5 and code.isdigit()
+
+    def test_seoul_has_25_districts(self):
+        seoul = [k for k, v in REGION_CODES.items() if v.startswith("11")]
+        assert len(seoul) == 25
+
+    def test_has_metro_cities(self):
+        for city in ["부산", "대구", "인천", "광주", "대전"]:
+            matches = [k for k in REGION_CODES if k.startswith(city)]
+            assert len(matches) >= 3, f"{city} has fewer than 3 districts"
+
+    def test_has_gyeonggi(self):
+        gyeonggi = [k for k, v in REGION_CODES.items() if v.startswith("41")]
+        assert len(gyeonggi) >= 15
+
+    def test_region_groups_cover_all(self):
+        grouped = []
+        for regions in REGION_GROUPS.values():
+            grouped.extend(regions)
+        assert set(grouped) == set(REGION_CODES.keys())
+
+    def test_region_groups_have_correct_cities(self):
+        assert "서울" in REGION_GROUPS
+        assert "경기" in REGION_GROUPS
+        assert "부산" in REGION_GROUPS
 
 
 class TestTradeRecord:
