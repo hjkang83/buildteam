@@ -120,11 +120,12 @@ with st.sidebar:
                                      help="전원 합의 시 확증편향 방지 프롬프트")
 
     with st.expander("⚙️ 투자 분석 조건", expanded=False):
-        ltv = st.slider("LTV (대출비율)", 0.0, 0.8, 0.6, 0.1, format="%.0f%%",
-                         help="매매가 대비 대출 비율")
+        ltv_pct = st.slider("LTV (대출비율 %)", 0, 80, 60, 5,
+                             help="매매가 대비 대출 비율")
+        ltv = ltv_pct / 100.0
         loan_rate = st.slider("대출금리 (연 %)", 2.0, 7.0, 4.0, 0.5)
         vacancy = st.slider("연간 공실 (개월)", 0.0, 3.0, 1.0, 0.5)
-        mgmt_fee = st.number_input("월 관리비 (만원)", 5, 30, 15, 5)
+        mgmt_fee = st.number_input("월 관리비 (만원)", 0, 100, 15, 1)
 
     invest_params = InvestmentParams(
         ltv=ltv,
