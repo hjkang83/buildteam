@@ -173,6 +173,9 @@ pytest tests/ -v
 - 스트레스 테스트 비교 바 차트
 - 10년 현금흐름 차트 (순수익 + 누적 + 자산가치)
 - Monte Carlo IRR 분포 히스토그램 (P5/P50/P95 마킹)
+- 세금 비교 스택 차트 (취득세/보유세/양도세)
+- 스코어카드 수평 바 차트 (4축 점수 비교)
+- 포트폴리오 효율적 프론티어 산점도 (IRR vs 변동성)
 
 ### 12. 파일 업로드
 
@@ -248,7 +251,7 @@ pytest tests/ -v
 | 토론 | consensus + personas | 합의 감지, 확증편향 방지, 다양성 추적 |
 | 파일 | openpyxl + pdfplumber | Excel/PDF 파싱 |
 | Frontend | Streamlit | 멀티 에이전트 채팅 UI |
-| 테스트 | pytest (212 tests) | API 키 없이 전체 로직 검증 (API mock 포함) |
+| 테스트 | pytest (260 tests) | API 키 없이 전체 로직 검증 (E2E + API mock 포함) |
 
 ---
 
@@ -279,11 +282,12 @@ buildteam/
 │   ├── file_parser.py         # Excel/PDF 파서
 │   ├── archive.py             # 회의록 저장 + 세션 체크포인트
 │   └── demo_mock.py           # Mock 데모 (API 불필요)
-├── tests/                     # pytest 테스트 스위트 (212 tests)
+├── tests/                     # pytest 테스트 스위트 (260 tests, E2E 포함)
 ├── meetings/                  # 회의록 저장 디렉토리
 ├── MANIFESTO.md                # 핵심 가치와 설계 원칙
 ├── WHYTREE.md                 # Why Tree 분석
 ├── PREMORTEM.md               # 사전 부검
+├── COMPARISON.md              # ChatGPT 비교 시연 자료
 └── glossary.md                # 용어집
 ```
 
