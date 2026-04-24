@@ -10,6 +10,9 @@ from scenario import SensitivityTable, StressTest
 from yield_analyzer import YieldAnalysis
 from cashflow import CashFlowTable
 from monte_carlo import MonteCarloResult
+from tax import TaxSummary
+from scorecard import Scorecard
+from portfolio import PortfolioComparison
 
 
 def sensitivity_line_chart(table: SensitivityTable) -> go.Figure:
@@ -103,5 +106,70 @@ def monte_carlo_histogram(result: MonteCarloResult) -> go.Figure:
         title=f"{result.region} — IRR 분포 ({result.n_simulations:,}회)",
         xaxis_title="IRR (%)", yaxis_title="빈도",
         height=400, template="plotly_white",
+    )
+    return fig
+
+
+def tax_comparison_chart(summaries: list[TaxSummary]) -> go.Figure:
+    regions = [s.region for s in summaries]
+    acq = [s.acquisition.amount for s in summaries]
+    hold = [s.holding.total_over_period for s in summaries]
+    cg = [s.capital_gains.tax_amount for s in summaries]
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(name="취득세", x=regions, y=acq, marker_color="#42A5F5"))
+    fig.add_trace(go.Bar(name=f"보유세({summaries[0].holding.holding_years}년)",
+                         x=regions, y=hold, marker_color="#FF9800"))
+    fig.add_trace(go.Bar(name="양도세", x=regions, y=cg, marker_color="#EF5350"))
+    fig.update_layout(
+        title="권역별 세금 비교",
+        barmode="stack", yaxis_title="세금 (만원)",
+        height=400, template="plotly_white",
+    )
+    return fig
+
+
+def scorecard_chart(cards: list[Scorecard]) -> go.Figure:
+    categories = [d.category for d in cards[0].details]
+    fig = go.Figure()
+    colors = ["#42A5F5", "#66BB6A", "#FF9800", "#EF5350"]
+    for i, card in enumerate(cards):
+        scores = [d.score for d in card.details]
+        fig.add_trace(go.Bar(
+            name=f"{card.region} ({card.total_score:.0f}점)",
+            y=categories, x=scores, orientation="h",
+            marker_color=colors[i % len(colors)],
+        ))
+    max_scores = [d.max_score for d in cards[0].details]
+    fig.add_trace(go.Bar(
+        name="만점", y=categories, x=max_scores, orientation="h",
+        marker_color="rgba(200,200,200,0.3)",
+    ))
+    fig.update_layout(
+        title="투자 판단 스코어카드",
+        barmode="group", xaxis_title="점수",
+        height=400, template="plotly_white",
+    )
+    return fig
+
+
+def portfolio_scatter(comparisons: list[PortfolioComparison]) -> go.Figure:
+    labels = [c.combo_label for c in comparisons]
+    irrs = [c.result.portfolio_irr for c in comparisons]
+    stds = [c.result.portfolio_std for c in comparisons]
+    incomes = [c.result.total_monthly_income for c in comparisons]
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=stds, y=irrs, mode="markers+text",
+        text=labels, textposition="top center",
+        marker=dict(size=[max(10, inc / 3) for inc in incomes],
+                    color=irrs, colorscale="Viridis", showscale=True,
+                    colorbar=dict(title="IRR(%)")),
+    ))
+    fig.update_layout(
+        title="포트폴리오 효율적 프론티어",
+        xaxis_title="변동성 (%)", yaxis_title="기대 IRR (%)",
+        height=450, template="plotly_white",
     )
     return fig
