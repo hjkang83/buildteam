@@ -37,9 +37,13 @@ from scenario import (
 )
 from cashflow import build_multi_cashflow, format_cashflow_for_agents, CashFlowParams
 from monte_carlo import run_multi_monte_carlo, format_monte_carlo_for_agents
+from tax import compute_multi_tax_summary, format_tax_for_agents, TaxParams
+from scorecard import build_multi_scorecard, format_scorecard_for_agents
+from portfolio import compare_portfolios, format_portfolio_for_agents
 from charts import (
     sensitivity_line_chart, stress_bar_chart, region_radar,
     cashflow_chart, monte_carlo_histogram,
+    tax_comparison_chart, scorecard_chart, portfolio_scatter,
 )
 from demo_mock import MOCK_TURNS, MOCK_MINUTES, DEMO_TOPIC, DEMO_REGIONS
 
@@ -168,9 +172,14 @@ if start_btn:
         st.stop()
 
     market_data, yield_data, scenario_data = "", "", ""
-    cashflow_data, mc_data = "", ""
+    cashflow_data, mc_data, tax_data, score_data, port_data = "", "", "", "", ""
     analyses_cache: list = []
     summaries_cache: list = []
+    cf_tables_cache: list = []
+    mc_results_cache: list = []
+    tax_cache: list = []
+    score_cache: list = []
+    port_cache: list = []
     if selected_regions:
         summaries_cache = get_multi_region_data(selected_regions, property_type=property_type)
         market_data = format_for_agents(summaries_cache)
@@ -178,10 +187,18 @@ if start_btn:
         yield_data = format_analysis_for_agents(analyses_cache)
         scenario_data = format_full_scenario_for_agents(summaries_cache, invest_params)
         if analyses_cache:
-            cf_tables = build_multi_cashflow(analyses_cache)
-            cashflow_data = format_cashflow_for_agents(cf_tables)
-            mc_results = run_multi_monte_carlo(analyses_cache)
-            mc_data = format_monte_carlo_for_agents(mc_results)
+            cf_tables_cache = build_multi_cashflow(analyses_cache)
+            cashflow_data = format_cashflow_for_agents(cf_tables_cache)
+            mc_results_cache = run_multi_monte_carlo(analyses_cache)
+            mc_data = format_monte_carlo_for_agents(mc_results_cache)
+            tax_cache = compute_multi_tax_summary(analyses_cache)
+            tax_data = format_tax_for_agents(tax_cache)
+            score_cache = build_multi_scorecard(
+                analyses_cache, cf_tables_cache, mc_results_cache, tax_cache)
+            score_data = format_scorecard_for_agents(score_cache)
+            port_cache = compare_portfolios(
+                analyses_cache, cf_tables_cache, mc_results_cache)
+            port_data = format_portfolio_for_agents(port_cache)
 
     file_data = ""
     if uploaded_files:
@@ -203,6 +220,7 @@ if start_btn:
 
     all_data = "\n".join(filter(None, [
         market_data, yield_data, scenario_data, cashflow_data, mc_data,
+        tax_data, score_data, port_data,
     ]))
     meeting = Meeting(
         topic,
@@ -219,6 +237,11 @@ if start_btn:
     st.session_state["debate_rounds"] = debate_rounds
     st.session_state["analyses"] = analyses_cache
     st.session_state["summaries"] = summaries_cache
+    st.session_state["cf_tables"] = cf_tables_cache
+    st.session_state["mc_results"] = mc_results_cache
+    st.session_state["tax_summaries"] = tax_cache
+    st.session_state["scorecards"] = score_cache
+    st.session_state["portfolios"] = port_cache
 
     init_msgs: list[dict] = []
     if market_data:
@@ -231,6 +254,12 @@ if start_btn:
         init_msgs.append({"role": "system", "content": cashflow_data, "type": "cashflow"})
     if mc_data:
         init_msgs.append({"role": "system", "content": mc_data, "type": "montecarlo"})
+    if tax_data:
+        init_msgs.append({"role": "system", "content": tax_data, "type": "tax"})
+    if score_data:
+        init_msgs.append({"role": "system", "content": score_data, "type": "scorecard"})
+    if port_data:
+        init_msgs.append({"role": "system", "content": port_data, "type": "portfolio"})
     if file_data:
         init_msgs.append({"role": "system", "content": file_data, "type": "file"})
     st.session_state["messages"] = init_msgs
@@ -306,6 +335,9 @@ for msg in messages:
             "scenario": "🔮 시나리오 시뮬레이션",
             "cashflow": "💰 10년 현금흐름",
             "montecarlo": "🎲 Monte Carlo",
+            "tax": "🏛 세금 시뮬레이션",
+            "scorecard": "📋 투자 스코어카드",
+            "portfolio": "📦 포트폴리오 분석",
             "file": "📎 업로드 파일",
         }
         msg_type = msg.get("type", "")
@@ -343,7 +375,10 @@ summaries_data = st.session_state.get("summaries", [])
 
 if analyses_data and not st.session_state.get("mock_mode"):
     with st.expander("📊 시각화 차트", expanded=False):
-        chart_tabs = st.tabs(["권역 비교", "민감도", "스트레스", "현금흐름", "Monte Carlo"])
+        chart_tabs = st.tabs([
+            "권역 비교", "민감도", "스트레스", "현금흐름",
+            "Monte Carlo", "세금", "스코어카드", "포트폴리오",
+        ])
         with chart_tabs[0]:
             st.plotly_chart(region_radar(analyses_data), use_container_width=True)
         with chart_tabs[1]:
@@ -357,14 +392,54 @@ if analyses_data and not st.session_state.get("mock_mode"):
             if tests:
                 st.plotly_chart(stress_bar_chart(tests), use_container_width=True)
         with chart_tabs[3]:
-            cf_tables = build_multi_cashflow(analyses_data)
-            for t in cf_tables[:2]:
+            cf_tables_data = st.session_state.get("cf_tables", [])
+            if not cf_tables_data:
+                cf_tables_data = build_multi_cashflow(analyses_data)
+            for t in cf_tables_data[:2]:
                 st.plotly_chart(cashflow_chart(t), use_container_width=True)
         with chart_tabs[4]:
-            mc = run_multi_monte_carlo(analyses_data)
-            for r in mc:
+            mc_data_cached = st.session_state.get("mc_results", [])
+            if not mc_data_cached:
+                mc_data_cached = run_multi_monte_carlo(analyses_data)
+            for r in mc_data_cached:
                 if r.n_simulations > 0:
                     st.plotly_chart(monte_carlo_histogram(r), use_container_width=True)
+        with chart_tabs[5]:
+            tax_data_cached = st.session_state.get("tax_summaries", [])
+            if tax_data_cached:
+                st.plotly_chart(tax_comparison_chart(tax_data_cached), use_container_width=True)
+                for s in tax_data_cached:
+                    with st.container():
+                        st.markdown(f"**{s.region}** — 총 세금 {s.total_tax:,.0f}만원 (실효세율 {s.effective_tax_rate_pct}%)")
+                        cols = st.columns(3)
+                        cols[0].metric("취득세", f"{s.acquisition.amount:,.0f}만원", f"{s.acquisition.rate_pct}%")
+                        cols[1].metric("보유세(연)", f"{s.holding.total_annual:,.0f}만원")
+                        cols[2].metric("세후 순이익", f"{s.net_gain_after_tax:,.0f}만원")
+        with chart_tabs[6]:
+            score_data_cached = st.session_state.get("scorecards", [])
+            if score_data_cached:
+                st.plotly_chart(scorecard_chart(score_data_cached), use_container_width=True)
+                for card in score_data_cached:
+                    verdict_colors = {"투자 추천": "green", "조건부 추천": "orange", "대기": "gray", "패스": "red"}
+                    color = verdict_colors.get(card.verdict, "gray")
+                    st.markdown(
+                        f"**{card.region}** — "
+                        f"<span style='color:{color};font-weight:bold;'>{card.verdict}</span> "
+                        f"({card.total_score}/{card.max_possible}점)",
+                        unsafe_allow_html=True,
+                    )
+                    if card.key_strengths:
+                        st.markdown(f"  - 강점: {'; '.join(card.key_strengths)}")
+                    if card.key_risks:
+                        st.markdown(f"  - 리스크: {'; '.join(card.key_risks)}")
+        with chart_tabs[7]:
+            port_data_cached = st.session_state.get("portfolios", [])
+            if port_data_cached:
+                st.plotly_chart(portfolio_scatter(port_data_cached), use_container_width=True)
+                best = max(port_data_cached, key=lambda c: c.result.portfolio_irr)
+                safest = min(port_data_cached, key=lambda c: c.result.portfolio_std)
+                st.markdown(f"**수익 최적**: {best.combo_label} (IRR {best.result.portfolio_irr:.1f}%)")
+                st.markdown(f"**안정 최적**: {safest.combo_label} (변동성 {safest.result.portfolio_std:.1f}%)")
 
 # ------------------------------------------------------------------
 # 회의 종료 → 회의록 생성

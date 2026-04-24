@@ -307,3 +307,36 @@ class TestCharts:
         from charts import monte_carlo_histogram
         fig = monte_carlo_histogram(result)
         assert fig is not None
+
+    def test_tax_chart(self):
+        from tax import compute_multi_tax_summary
+        summaries = get_multi_region_data(["강남구", "성동구"])
+        analyses = analyze_multi_region(summaries)
+        tax_sums = compute_multi_tax_summary(analyses)
+        from charts import tax_comparison_chart
+        fig = tax_comparison_chart(tax_sums)
+        assert fig is not None
+
+    def test_scorecard_chart(self):
+        from scorecard import build_multi_scorecard
+        from tax import compute_multi_tax_summary
+        summaries = get_multi_region_data(["강남구", "성동구"])
+        analyses = analyze_multi_region(summaries)
+        cf = build_multi_cashflow(analyses)
+        mc = run_multi_monte_carlo(analyses)
+        tx = compute_multi_tax_summary(analyses)
+        cards = build_multi_scorecard(analyses, cf, mc, tx)
+        from charts import scorecard_chart
+        fig = scorecard_chart(cards)
+        assert fig is not None
+
+    def test_portfolio_chart(self):
+        from portfolio import compare_portfolios
+        summaries = get_multi_region_data(["강남구", "성동구"])
+        analyses = analyze_multi_region(summaries)
+        cf = build_multi_cashflow(analyses)
+        mc = run_multi_monte_carlo(analyses)
+        comps = compare_portfolios(analyses, cf, mc)
+        from charts import portfolio_scatter
+        fig = portfolio_scatter(comps)
+        assert fig is not None
