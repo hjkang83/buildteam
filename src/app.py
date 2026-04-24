@@ -192,24 +192,27 @@ if start_btn:
     score_cache: list = []
     port_cache: list = []
     if selected_regions:
-        summaries_cache = get_multi_region_data(selected_regions, property_type=property_type)
-        market_data = format_for_agents(summaries_cache)
-        analyses_cache = analyze_multi_region(summaries_cache, invest_params)
-        yield_data = format_analysis_for_agents(analyses_cache)
-        scenario_data = format_full_scenario_for_agents(summaries_cache, invest_params)
-        if analyses_cache:
-            cf_tables_cache = build_multi_cashflow(analyses_cache)
-            cashflow_data = format_cashflow_for_agents(cf_tables_cache)
-            mc_results_cache = run_multi_monte_carlo(analyses_cache)
-            mc_data = format_monte_carlo_for_agents(mc_results_cache)
-            tax_cache = compute_multi_tax_summary(analyses_cache)
-            tax_data = format_tax_for_agents(tax_cache)
-            score_cache = build_multi_scorecard(
-                analyses_cache, cf_tables_cache, mc_results_cache, tax_cache)
-            score_data = format_scorecard_for_agents(score_cache)
-            port_cache = compare_portfolios(
-                analyses_cache, cf_tables_cache, mc_results_cache)
-            port_data = format_portfolio_for_agents(port_cache)
+        try:
+            summaries_cache = get_multi_region_data(selected_regions, property_type=property_type)
+            market_data = format_for_agents(summaries_cache)
+            analyses_cache = analyze_multi_region(summaries_cache, invest_params)
+            yield_data = format_analysis_for_agents(analyses_cache)
+            scenario_data = format_full_scenario_for_agents(summaries_cache, invest_params)
+            if analyses_cache:
+                cf_tables_cache = build_multi_cashflow(analyses_cache)
+                cashflow_data = format_cashflow_for_agents(cf_tables_cache)
+                mc_results_cache = run_multi_monte_carlo(analyses_cache)
+                mc_data = format_monte_carlo_for_agents(mc_results_cache)
+                tax_cache = compute_multi_tax_summary(analyses_cache)
+                tax_data = format_tax_for_agents(tax_cache)
+                score_cache = build_multi_scorecard(
+                    analyses_cache, cf_tables_cache, mc_results_cache, tax_cache)
+                score_data = format_scorecard_for_agents(score_cache)
+                port_cache = compare_portfolios(
+                    analyses_cache, cf_tables_cache, mc_results_cache)
+                port_data = format_portfolio_for_agents(port_cache)
+        except Exception as e:
+            st.warning(f"⚠️ 데이터 분석 중 오류가 발생했습니다: {e}\n샘플 데이터로 계속합니다.")
 
     file_data = ""
     if uploaded_files:
@@ -499,15 +502,20 @@ if not st.session_state.get("finalized"):
         use_debate = st.session_state.get("debate_mode", False)
         n_rounds = st.session_state.get("debate_rounds", 2)
 
-        if use_debate and n_rounds > 1:
-            with st.spinner(f"에이전트 토론 중 ({n_rounds} 라운드)..."):
-                all_rounds = _run_async(
-                    meeting.user_says_with_debate(user_input, rounds=n_rounds)
-                )
-            turns = [t for rnd in all_rounds for t in rnd]
-        else:
-            with st.spinner("에이전트 응답 생성 중..."):
-                turns = _run_async(meeting.user_says(user_input))
+        try:
+            if use_debate and n_rounds > 1:
+                with st.spinner(f"에이전트 토론 중 ({n_rounds} 라운드)..."):
+                    all_rounds = _run_async(
+                        meeting.user_says_with_debate(user_input, rounds=n_rounds)
+                    )
+                turns = [t for rnd in all_rounds for t in rnd]
+            else:
+                with st.spinner("에이전트 응답 생성 중..."):
+                    turns = _run_async(meeting.user_says(user_input))
+        except Exception as e:
+            st.error(f"❌ 에이전트 응답 생성 실패: {e}")
+            st.info("API 키를 확인하거나, 네트워크 연결 상태를 점검해 주세요.")
+            turns = []
 
         for turn in turns:
             key = turn["agent_key"]
