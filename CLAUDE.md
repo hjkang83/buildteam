@@ -27,9 +27,11 @@ CFO·CSO·투자컨설턴트 3명의 AI C-suite가 실거래 데이터 기반으
 
 ### 4. Git 워크플로우
 
+- **세션 시작 시 항상 `git pull origin main`** — GitHub 웹에서 수정한 내용을 놓치지 않는다.
 - 작업 브랜치에서 개발 → PR 생성 → **squash merge**로 main에 반영.
 - 커밋 메시지는 conventional commits 스타일: `feat:`, `fix:`, `refactor:`, `test:`, `docs:`.
 - 푸시 실패 시 rebase 후 재시도. 네트워크 오류는 최대 4회 지수 백오프 재시도.
+- 각 스테이지 완료 후 **바로 커밋+푸시** — 다음 스테이지를 시작하기 전에 현재 작업을 안전하게 저장.
 
 ## 기술 스택
 
@@ -86,6 +88,29 @@ python src/demo_mock.py       # API 키 없이 Mock 데모
 python src/main.py --demo     # 실제 API 데모
 streamlit run src/app.py      # Streamlit Web UI
 ```
+
+## 세션 관리
+
+- 세션 시작 시 **반드시 `git fetch && git pull origin main`** 먼저 실행 — GitHub 웹 수정을 놓치지 않는다.
+- 최근 커밋 5개를 확인하고, 이전 세션에서 중단된 작업이 있는지 파악한 후 작업을 시작한다.
+- 한 세션에서 1~2개 스테이지만 완결하는 것을 목표로 한다 — 4개를 시작하는 것보다 2개를 완결하는 게 ��다.
+
+## 페르소나 리팩터 규칙
+
+- 페르소나 명세서(`agents/*.md`)를 수정할 때는 **반드시** 관련 테스트 키워드도 동시에 갱신한다.
+- 영향받는 파일: `tests/test_personas.py`, `tests/test_demo_mock.py`, `src/demo_mock.py`의 Gold Standard, `src/personas.py`의 DIVERSITY_ANGLES
+- 페르소나만 수정하고 테스트를 나중에 고치지 않는다 — 한 커밋에 같이 반영.
+
+## 환경 변수
+
+- `ANTHROPIC_API_KEY`: 실제 API 데모 및 에이전트 응답 생성에 필수. 없으면 Mock 데모만 가능.
+- `DATA_GO_KR_API_KEY`: 국토교통부 실거래가 API 호출에 필요. 없으면 샘플 데���터 자동 fallback.
+- API 키가 없을 때는 즉시 사용자에게 알리고, 조용히 mock으로 대체하지 않는다.
+
+## Custom Skills
+
+- `/ship-stage`: 테스트 → 커밋 → 푸시 → PR → 머지 전체 플로우 자동화
+- `/refactor-persona`: 페르소나 변경 + 테스트 키워드 동시 갱신 TDD 루프
 
 ## 의사소통 언어
 
