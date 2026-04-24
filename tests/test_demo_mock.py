@@ -42,7 +42,7 @@ class TestMockData:
                                 "목적", "질문"]
         for turn in MOCK_TURNS:
             has_perspective = any(kw in turn["mentor"] for kw in perspective_keywords)
-            assert has_perspective, "고문(mentor) 응답에 관점 제시가 없습니다"
+            assert has_perspective, "투자컨설턴트(mentor) 응답에 관점 제시가 없습니다"
 
 
 class TestMockMinutes:

@@ -183,7 +183,7 @@ class TestMessagesForAgent:
         loop.run_until_complete(meeting_no_api.user_says("질문"))
         msgs = meeting_no_api._messages_for_agent("practitioner")
         user_msgs = [m for m in msgs if m["role"] == "user"]
-        has_other_agent = any("CSO" in m["content"] or "고문" in m["content"]
+        has_other_agent = any("CSO" in m["content"] or "투자컨설턴트" in m["content"]
                              for m in user_msgs)
         assert has_other_agent
 
@@ -319,7 +319,7 @@ class TestAgentErrorHandling:
             side_effect=[
                 _mock_response("CFO 정상 응답"),
                 RuntimeError("API 장애"),
-                _mock_response("고문 정상 응답"),
+                _mock_response("투자컨설턴트 정상 응답"),
             ]
         )
         turns = asyncio.get_event_loop().run_until_complete(
