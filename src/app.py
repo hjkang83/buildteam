@@ -24,7 +24,7 @@ except ImportError:
 from meeting import Meeting
 from personas import AGENT_CONFIG
 from archive import list_meetings
-from real_estate import REGION_CODES, PROPERTY_TYPES, format_for_agents, get_multi_region_data
+from real_estate import REGION_CODES, REGION_GROUPS, PROPERTY_TYPES, format_for_agents, get_multi_region_data
 from file_parser import parse_file, SUPPORTED_EXTENSIONS
 from file_parser import format_for_agents as format_files_for_agents
 from yield_analyzer import (
@@ -102,11 +102,16 @@ with st.sidebar:
         horizontal=True,
     )
 
+    region_area = st.selectbox(
+        "🗺 지역 권역",
+        options=list(REGION_GROUPS.keys()),
+        index=0,
+    )
     selected_regions = st.multiselect(
         "📈 실거래 데이터 지역",
-        options=list(REGION_CODES.keys()),
-        default=["강남구"],
-        help="선택한 지역의 실거래 데이터를 자동 로딩합니다",
+        options=REGION_GROUPS[region_area],
+        default=[REGION_GROUPS[region_area][0]] if REGION_GROUPS[region_area] else [],
+        help=f"{region_area} 권역 {len(REGION_GROUPS[region_area])}개 지역 | 전체 {len(REGION_CODES)}개 지역 지원",
     )
 
     uploaded_files = st.file_uploader(
