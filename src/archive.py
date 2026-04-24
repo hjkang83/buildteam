@@ -35,7 +35,7 @@ def build_frontmatter(
     """Build Obsidian-compatible YAML frontmatter block (including the
     delimiters)."""
     tags = tags or ["meeting", "talkfile"]
-    participants = participants or ["대표님", "CFO", "CSO", "CHO", "기록"]
+    participants = participants or ["대표님", "CFO", "CSO", "투자컨설턴트", "기록"]
     tag_yaml = ", ".join(f'"{_escape(t)}"' for t in tags)
     part_yaml = ", ".join(f'"{_escape(p)}"' for p in participants)
     return (

@@ -50,7 +50,7 @@ BANNER = r"""
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    🏢  Data 기반 Multi-Agent 부동산 투자 자문 시스템
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  참석: 📊 CFO(재무총괄)  🔴 CSO(전략총괄)  🧭 고문(자문역)  📝 비서실장
+  참석: 📊 CFO(재무총괄)  🔴 CSO(전략총괄)  🧭 투자컨설턴트(투자자문)  📝 비서실장
   종료: /end  또는  quit
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
@@ -185,7 +185,7 @@ async def _run_interactive(
     print(f"🗂  세션 ID: {meeting.session_id}")
     mode_label = "토론 모드" if debate_mode else "일반 모드"
     print(f"🗣  {mode_label}" + (f" ({debate_rounds}라운드)" if debate_mode else ""))
-    print("대표님, 자유롭게 말씀하세요. CFO·CSO·고문이 동시에 응답합니다.\n")
+    print("대표님, 자유롭게 말씀하세요. CFO·CSO·투자컨설턴트가 동시에 응답합니다.\n")
 
     await _meeting_loop(meeting, debate_mode=debate_mode, debate_rounds=debate_rounds)
     await _finalize(meeting)

@@ -18,7 +18,7 @@ class TestAgentConfig:
         names = {cfg["name"] for cfg in AGENT_CONFIG.values()}
         assert "CFO" in names
         assert "CSO" in names
-        assert "고문" in names
+        assert "투자컨설턴트" in names
         assert "비서실장" in names
 
 

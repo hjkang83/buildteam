@@ -1,7 +1,7 @@
 """Meeting orchestrator: C-suite agents collaborating through the Anthropic API.
 
 Architecture:
-- 3 C-suite (CFO/CSO/고문) respond **in parallel** per user turn
+- 3 C-suite (CFO/CSO/투자컨설턴트) respond **in parallel** per user turn
 - 비서실장(Clerk) runs once at the end in batch mode to produce meeting minutes
 - Each agent sees a rebuilt conversation history where its OWN past turns are
   'assistant' messages and everything else (user + other agents) is folded into
