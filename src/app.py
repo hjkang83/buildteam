@@ -34,6 +34,7 @@ from monte_carlo import run_multi_monte_carlo
 from tax import TaxParams
 from pipeline import PipelineResult, run_pipeline
 from briefing import generate_ceo_briefing
+from manual import MANUAL_TEXT, FILE_SAMPLE_TEXT
 from charts import (
     sensitivity_line_chart, stress_bar_chart, region_radar,
     cashflow_chart, monte_carlo_histogram,
@@ -159,6 +160,11 @@ with st.sidebar:
     for key in ["practitioner", "redteam", "mentor"]:
         cfg = AGENT_CONFIG[key]
         st.markdown(f"{cfg['emoji']} **{cfg['name']}** ({cfg['label']})")
+
+    st.divider()
+    help_col1, help_col2 = st.columns(2)
+    manual_btn = help_col1.button("📖 사용 매뉴얼", use_container_width=True)
+    sample_btn = help_col2.button("📎 파일 양식", use_container_width=True)
 
     past_meetings = list_meetings(include_mock=True)
     if past_meetings:
@@ -330,6 +336,25 @@ if mock_btn:
 # ------------------------------------------------------------------
 
 st.markdown("## 🏢 Data 기반 Multi-Agent 부동산 투자 자문 시스템")
+
+# ------------------------------------------------------------------
+# 매뉴얼 / 파일 양식 표시
+# ------------------------------------------------------------------
+
+if manual_btn:
+    st.session_state["show_manual"] = not st.session_state.get("show_manual", False)
+    st.session_state["show_sample"] = False
+if sample_btn:
+    st.session_state["show_sample"] = not st.session_state.get("show_sample", False)
+    st.session_state["show_manual"] = False
+
+if st.session_state.get("show_manual"):
+    st.markdown(MANUAL_TEXT)
+    st.divider()
+
+if st.session_state.get("show_sample"):
+    st.markdown(FILE_SAMPLE_TEXT)
+    st.divider()
 
 meeting: Meeting | None = st.session_state.get("meeting")
 
