@@ -36,14 +36,9 @@ from archive import list_sessions  # noqa: E402
 from file_parser import SUPPORTED_EXTENSIONS, parse_file  # noqa: E402
 from file_parser import format_for_agents as format_files_for_agents  # noqa: E402
 from meeting import Meeting  # noqa: E402
-from real_estate import REGION_CODES, PROPERTY_TYPES, format_for_agents, get_multi_region_data  # noqa: E402
-from yield_analyzer import analyze_multi_region, format_analysis_for_agents  # noqa: E402
-from scenario import format_full_scenario_for_agents  # noqa: E402
-from cashflow import build_multi_cashflow, format_cashflow_for_agents  # noqa: E402
-from monte_carlo import run_multi_monte_carlo, format_monte_carlo_for_agents  # noqa: E402
-from tax import compute_multi_tax_summary, format_tax_for_agents, TaxParams  # noqa: E402
-from scorecard import build_multi_scorecard, format_scorecard_for_agents  # noqa: E402
-from portfolio import compare_portfolios, format_portfolio_for_agents  # noqa: E402
+from pipeline import run_pipeline  # noqa: E402
+from real_estate import REGION_CODES, PROPERTY_TYPES  # noqa: E402
+from tax import TaxParams  # noqa: E402
 
 
 BANNER = r"""
@@ -119,50 +114,40 @@ async def _run_interactive(
         print("안건이 없어 종료합니다.")
         return
 
-    market_data, yield_data, scenario_data = "", "", ""
-    cashflow_data, mc_data, tax_data, score_data, port_data = "", "", "", "", ""
-    cf_tables, mc_results, tax_summaries = None, None, None
+    market_data, all_data = "", ""
     if regions:
         print(f"\n📈 실거래 데이터 로딩 중... ({', '.join(regions)})")
-        summaries = get_multi_region_data(regions, property_type=property_type)
-        market_data = format_for_agents(summaries)
+        p = run_pipeline(
+            regions,
+            property_type=property_type,
+            use_cashflow=use_cashflow,
+            use_monte_carlo=use_monte_carlo,
+            use_tax=use_tax,
+            use_scorecard=use_scorecard,
+            use_portfolio=use_portfolio,
+        )
+        market_data = p.market_text
         print(market_data)
-        analyses = analyze_multi_region(summaries)
-        yield_data = format_analysis_for_agents(analyses)
-        if yield_data:
-            print(yield_data)
-        scenario_data = format_full_scenario_for_agents(summaries)
-        if scenario_data:
-            print(scenario_data)
-        if use_cashflow:
-            cf_tables = build_multi_cashflow(analyses)
-            cashflow_data = format_cashflow_for_agents(cf_tables)
-            print(cashflow_data)
-        if use_monte_carlo:
-            mc_results = run_multi_monte_carlo(analyses)
-            mc_data = format_monte_carlo_for_agents(mc_results)
-            print(mc_data)
-        if use_tax:
-            tax_summaries = compute_multi_tax_summary(analyses)
-            tax_data = format_tax_for_agents(tax_summaries)
-            print(tax_data)
-        if use_scorecard:
-            cards = build_multi_scorecard(analyses, cf_tables, mc_results, tax_summaries)
-            score_data = format_scorecard_for_agents(cards)
-            print(score_data)
-        if use_portfolio and len(analyses) >= 2:
-            comparisons = compare_portfolios(analyses, cf_tables, mc_results)
-            port_data = format_portfolio_for_agents(comparisons)
-            print(port_data)
+        if p.yield_text:
+            print(p.yield_text)
+        if p.scenario_text:
+            print(p.scenario_text)
+        if p.cashflow_text:
+            print(p.cashflow_text)
+        if p.mc_text:
+            print(p.mc_text)
+        if p.tax_text:
+            print(p.tax_text)
+        if p.score_text:
+            print(p.score_text)
+        if p.port_text:
+            print(p.port_text)
+        all_data = p.all_data_text
         print()
 
     file_data = ""
     if files:
         file_data = _load_files(files)
-
-    all_data = "\n".join(filter(None, [
-        scenario_data, cashflow_data, mc_data, tax_data, score_data, port_data,
-    ]))
 
     if use_context:
         meeting = Meeting.with_context(topic, regions=regions)
@@ -177,7 +162,7 @@ async def _run_interactive(
         meeting = Meeting.with_files(topic, files, regions=regions)
     elif market_data:
         meeting = Meeting(topic, market_data=market_data,
-                          yield_data=yield_data, scenario_data=all_data)
+                          yield_data=p.yield_text, scenario_data=all_data)
     else:
         meeting = Meeting(topic)
 

@@ -17,14 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from personas import AGENT_CONFIG  # noqa: E402
-from real_estate import format_for_agents, get_multi_region_data  # noqa: E402
-from yield_analyzer import analyze_multi_region, format_analysis_for_agents  # noqa: E402
-from scenario import format_full_scenario_for_agents  # noqa: E402
-from cashflow import build_multi_cashflow, format_cashflow_for_agents  # noqa: E402
-from monte_carlo import run_multi_monte_carlo, format_monte_carlo_for_agents  # noqa: E402
-from tax import compute_multi_tax_summary, format_tax_for_agents  # noqa: E402
-from scorecard import build_multi_scorecard, format_scorecard_for_agents  # noqa: E402
-from portfolio import compare_portfolios, format_portfolio_for_agents  # noqa: E402
+from pipeline import run_pipeline  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MEETINGS_DIR = REPO_ROOT / "meetings"
@@ -186,33 +179,17 @@ def main() -> None:
     print(f"📌 데모 안건: {DEMO_TOPIC}")
     print(f"📈 비교 권역: {', '.join(DEMO_REGIONS)}\n")
 
-    summaries = get_multi_region_data(DEMO_REGIONS)
-    market_text = format_for_agents(summaries)
-    print(market_text)
-    analyses = analyze_multi_region(summaries)
-    yield_text = format_analysis_for_agents(analyses)
-    if yield_text:
-        print(yield_text)
-    scenario_text = format_full_scenario_for_agents(summaries)
-    if scenario_text:
-        print(scenario_text)
-
-    cf_tables = build_multi_cashflow(analyses)
-    cashflow_text = format_cashflow_for_agents(cf_tables)
-    print(cashflow_text)
-    mc_results = run_multi_monte_carlo(analyses)
-    mc_text = format_monte_carlo_for_agents(mc_results)
-    print(mc_text)
-
-    tax_summaries = compute_multi_tax_summary(analyses)
-    tax_text = format_tax_for_agents(tax_summaries)
-    print(tax_text)
-    cards = build_multi_scorecard(analyses, cf_tables, mc_results, tax_summaries)
-    score_text = format_scorecard_for_agents(cards)
-    print(score_text)
-    comparisons = compare_portfolios(analyses, cf_tables, mc_results)
-    port_text = format_portfolio_for_agents(comparisons)
-    print(port_text)
+    p = run_pipeline(DEMO_REGIONS)
+    print(p.market_text)
+    if p.yield_text:
+        print(p.yield_text)
+    if p.scenario_text:
+        print(p.scenario_text)
+    print(p.cashflow_text)
+    print(p.mc_text)
+    print(p.tax_text)
+    print(p.score_text)
+    print(p.port_text)
     print()
 
     for i, turn in enumerate(MOCK_TURNS, start=1):

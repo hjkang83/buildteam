@@ -24,23 +24,15 @@ except ImportError:
 from meeting import Meeting
 from personas import AGENT_CONFIG
 from archive import list_meetings
-from real_estate import REGION_CODES, REGION_GROUPS, PROPERTY_TYPES, format_for_agents, get_multi_region_data
+from real_estate import REGION_CODES, REGION_GROUPS, PROPERTY_TYPES
 from file_parser import parse_file, SUPPORTED_EXTENSIONS
 from file_parser import format_for_agents as format_files_for_agents
-from yield_analyzer import (
-    InvestmentParams,
-    analyze_multi_region,
-    format_analysis_for_agents,
-)
-from scenario import (
-    format_full_scenario_for_agents,
-    rate_sensitivity, vacancy_sensitivity, price_sensitivity, stress_test,
-)
-from cashflow import build_multi_cashflow, format_cashflow_for_agents, CashFlowParams
-from monte_carlo import run_multi_monte_carlo, format_monte_carlo_for_agents
-from tax import compute_multi_tax_summary, format_tax_for_agents, TaxParams
-from scorecard import build_multi_scorecard, format_scorecard_for_agents
-from portfolio import compare_portfolios, format_portfolio_for_agents
+from yield_analyzer import InvestmentParams
+from scenario import rate_sensitivity, vacancy_sensitivity, price_sensitivity, stress_test
+from cashflow import CashFlowParams, build_multi_cashflow
+from monte_carlo import run_multi_monte_carlo
+from tax import TaxParams
+from pipeline import run_pipeline
 from charts import (
     sensitivity_line_chart, stress_bar_chart, region_radar,
     cashflow_chart, monte_carlo_histogram,
@@ -187,37 +179,25 @@ if start_btn:
         st.error("❌ 회의 안건을 입력해 주세요.")
         st.stop()
 
-    market_data, yield_data, scenario_data = "", "", ""
-    cashflow_data, mc_data, tax_data, score_data, port_data = "", "", "", "", ""
-    analyses_cache: list = []
-    summaries_cache: list = []
-    cf_tables_cache: list = []
-    mc_results_cache: list = []
-    tax_cache: list = []
-    score_cache: list = []
-    port_cache: list = []
+    from pipeline import PipelineResult
+    p = PipelineResult()
     if selected_regions:
         try:
-            summaries_cache = get_multi_region_data(selected_regions, property_type=property_type)
-            market_data = format_for_agents(summaries_cache)
-            analyses_cache = analyze_multi_region(summaries_cache, invest_params)
-            yield_data = format_analysis_for_agents(analyses_cache)
-            scenario_data = format_full_scenario_for_agents(summaries_cache, invest_params)
-            if analyses_cache:
-                cf_tables_cache = build_multi_cashflow(analyses_cache)
-                cashflow_data = format_cashflow_for_agents(cf_tables_cache)
-                mc_results_cache = run_multi_monte_carlo(analyses_cache)
-                mc_data = format_monte_carlo_for_agents(mc_results_cache)
-                tax_cache = compute_multi_tax_summary(analyses_cache)
-                tax_data = format_tax_for_agents(tax_cache)
-                score_cache = build_multi_scorecard(
-                    analyses_cache, cf_tables_cache, mc_results_cache, tax_cache)
-                score_data = format_scorecard_for_agents(score_cache)
-                port_cache = compare_portfolios(
-                    analyses_cache, cf_tables_cache, mc_results_cache)
-                port_data = format_portfolio_for_agents(port_cache)
+            p = run_pipeline(
+                selected_regions,
+                invest_params=invest_params,
+                property_type=property_type,
+            )
         except Exception as e:
             st.warning(f"⚠️ 데이터 분석 중 오류가 발생했습니다: {e}\n샘플 데이터로 계속합니다.")
+    market_data = p.market_text
+    yield_data = p.yield_text
+    scenario_data = p.scenario_text
+    cashflow_data = p.cashflow_text
+    mc_data = p.mc_text
+    tax_data = p.tax_text
+    score_data = p.score_text
+    port_data = p.port_text
 
     file_data = ""
     if uploaded_files:
@@ -254,13 +234,13 @@ if start_btn:
     st.session_state["finalized"] = False
     st.session_state["debate_mode"] = debate_mode
     st.session_state["debate_rounds"] = debate_rounds
-    st.session_state["analyses"] = analyses_cache
-    st.session_state["summaries"] = summaries_cache
-    st.session_state["cf_tables"] = cf_tables_cache
-    st.session_state["mc_results"] = mc_results_cache
-    st.session_state["tax_summaries"] = tax_cache
-    st.session_state["scorecards"] = score_cache
-    st.session_state["portfolios"] = port_cache
+    st.session_state["analyses"] = p.analyses
+    st.session_state["summaries"] = p.summaries
+    st.session_state["cf_tables"] = p.cf_tables
+    st.session_state["mc_results"] = p.mc_results
+    st.session_state["tax_summaries"] = p.tax_summaries
+    st.session_state["scorecards"] = p.scorecards
+    st.session_state["portfolios"] = p.portfolios
 
     init_msgs: list[dict] = []
     if market_data:
@@ -292,37 +272,28 @@ if start_btn:
 if mock_btn:
     from datetime import datetime
 
-    summaries = get_multi_region_data(DEMO_REGIONS)
-    market_data = format_for_agents(summaries)
-    analyses = analyze_multi_region(summaries)
-    yield_data = format_analysis_for_agents(analyses)
-    scenario_data = format_full_scenario_for_agents(summaries)
-    cf_tables = build_multi_cashflow(analyses)
-    mc_results = run_multi_monte_carlo(analyses)
-    tax_sums = compute_multi_tax_summary(analyses)
-    score_cards = build_multi_scorecard(analyses, cf_tables, mc_results, tax_sums)
-    port_comps = compare_portfolios(analyses, cf_tables, mc_results)
+    mp = run_pipeline(DEMO_REGIONS)
 
-    meeting = Meeting(DEMO_TOPIC, market_data=market_data,
-                      yield_data=yield_data, scenario_data=scenario_data)
+    meeting = Meeting(DEMO_TOPIC, market_data=mp.market_text,
+                      yield_data=mp.yield_text, scenario_data=mp.scenario_text)
     st.session_state["meeting"] = meeting
     st.session_state["mock_mode"] = True
     st.session_state["finalized"] = False
-    st.session_state["analyses"] = analyses
-    st.session_state["summaries"] = summaries
-    st.session_state["cf_tables"] = cf_tables
-    st.session_state["mc_results"] = mc_results
-    st.session_state["tax_summaries"] = tax_sums
-    st.session_state["scorecards"] = score_cards
-    st.session_state["portfolios"] = port_comps
+    st.session_state["analyses"] = mp.analyses
+    st.session_state["summaries"] = mp.summaries
+    st.session_state["cf_tables"] = mp.cf_tables
+    st.session_state["mc_results"] = mp.mc_results
+    st.session_state["tax_summaries"] = mp.tax_summaries
+    st.session_state["scorecards"] = mp.scorecards
+    st.session_state["portfolios"] = mp.portfolios
 
     msgs: list[dict] = []
-    if market_data:
-        msgs.append({"role": "system", "content": market_data, "type": "market"})
-    if yield_data:
-        msgs.append({"role": "system", "content": yield_data, "type": "yield"})
-    if scenario_data:
-        msgs.append({"role": "system", "content": scenario_data, "type": "scenario"})
+    if mp.market_text:
+        msgs.append({"role": "system", "content": mp.market_text, "type": "market"})
+    if mp.yield_text:
+        msgs.append({"role": "system", "content": mp.yield_text, "type": "yield"})
+    if mp.scenario_text:
+        msgs.append({"role": "system", "content": mp.scenario_text, "type": "scenario"})
 
     for turn in MOCK_TURNS:
         msgs.append({"role": "user", "content": turn["user"]})
