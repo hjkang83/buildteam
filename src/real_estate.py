@@ -8,7 +8,9 @@ API 키가 없거나 호출 실패 시, Gold Standard 기반 샘플 데이터를
 """
 from __future__ import annotations
 
+import logging
 import os
+import re
 import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
@@ -117,10 +119,10 @@ REGION_GROUPS: dict[str, list[str]] = {
     "대전": [k for k in REGION_CODES if REGION_CODES[k].startswith("30")],
 }
 
-OFFI_TRADE_URL = "http://openapi.molit.go.kr/OpenAPI_ToolInstall498/service/rest/RTMSOBJSvc/getRTMSDataSvcOffiTrade"
-OFFI_RENT_URL = "http://openapi.molit.go.kr/OpenAPI_ToolInstallPack498/service/rest/RTMSOBJSvc/getRTMSDataSvcOffiRent"
-APT_TRADE_URL = "http://openapi.molit.go.kr:8081/OpenAPI_ToolInstall498/service/rest/RTMSOBJSvc/getRTMSDataSvcAptTrade"
-APT_RENT_URL = "http://openapi.molit.go.kr:8081/OpenAPI_ToolInstallPack498/service/rest/RTMSOBJSvc/getRTMSDataSvcAptRent"
+OFFI_TRADE_URL = "https://openapi.molit.go.kr/OpenAPI_ToolInstall498/service/rest/RTMSOBJSvc/getRTMSDataSvcOffiTrade"
+OFFI_RENT_URL = "https://openapi.molit.go.kr/OpenAPI_ToolInstallPack498/service/rest/RTMSOBJSvc/getRTMSDataSvcOffiRent"
+APT_TRADE_URL = "https://openapi.molit.go.kr:8081/OpenAPI_ToolInstall498/service/rest/RTMSOBJSvc/getRTMSDataSvcAptTrade"
+APT_RENT_URL = "https://openapi.molit.go.kr:8081/OpenAPI_ToolInstallPack498/service/rest/RTMSOBJSvc/getRTMSDataSvcAptRent"
 
 # backward compat aliases
 TRADE_API_URL = OFFI_TRADE_URL
@@ -216,7 +218,8 @@ def _fetch_with_retry(url: str, max_retries: int = MAX_RETRIES) -> str:
         except (URLError, TimeoutError):
             if attempt < max_retries - 1:
                 time.sleep(RETRY_BACKOFF * (attempt + 1))
-    raise URLError(f"API 호출 {max_retries}회 재시도 실패: {url[:80]}")
+    safe_url = re.sub(r"serviceKey=[^&]+", "serviceKey=***", url)
+    raise URLError(f"API 호출 {max_retries}회 재시도 실패: {safe_url}")
 
 
 def _cached_fetch(cache_key: str, url: str) -> str:
@@ -264,7 +267,11 @@ def fetch_rents(
 
 
 def _parse_trade_xml(xml_data: str, name_tag: str = "단지") -> list[TradeRecord]:
-    root = ET.fromstring(xml_data)
+    try:
+        root = ET.fromstring(xml_data)
+    except ET.ParseError as e:
+        logging.warning("매매 XML 파싱 실패: %s", e)
+        return []
     records: list[TradeRecord] = []
     for item in root.iter("item"):
         records.append(TradeRecord(
@@ -281,7 +288,11 @@ def _parse_trade_xml(xml_data: str, name_tag: str = "단지") -> list[TradeRecor
 
 
 def _parse_rent_xml(xml_data: str, name_tag: str = "단지") -> list[RentRecord]:
-    root = ET.fromstring(xml_data)
+    try:
+        root = ET.fromstring(xml_data)
+    except ET.ParseError as e:
+        logging.warning("임대 XML 파싱 실패: %s", e)
+        return []
     records: list[RentRecord] = []
     for item in root.iter("item"):
         records.append(RentRecord(
@@ -338,8 +349,8 @@ def get_region_data(
                 is_sample=False,
                 property_type=property_type,
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logging.warning("API 호출 실패 (%s): %s — 샘플 데이터로 대체합니다.", region_name, e)
 
     return _get_sample_data(region_name, deal_ym, property_type)
 

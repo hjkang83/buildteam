@@ -8,6 +8,8 @@ from real_estate import (
     get_region_data,
     get_multi_region_data,
     format_for_agents,
+    _parse_trade_xml,
+    _parse_rent_xml,
 )
 
 
@@ -115,3 +117,28 @@ class TestFormatForAgents:
 
     def test_empty_list_returns_empty(self):
         assert format_for_agents([]) == ""
+
+
+class TestXmlParsing:
+    def test_malformed_trade_xml_returns_empty(self):
+        result = _parse_trade_xml("<not><valid>xml")
+        assert result == []
+
+    def test_malformed_rent_xml_returns_empty(self):
+        result = _parse_rent_xml("completely invalid xml {{{{")
+        assert result == []
+
+    def test_empty_trade_xml_returns_empty(self):
+        result = _parse_trade_xml("<response><body><items></items></body></response>")
+        assert result == []
+
+    def test_empty_rent_xml_returns_empty(self):
+        result = _parse_rent_xml("<response><body><items></items></body></response>")
+        assert result == []
+
+
+class TestApiFallback:
+    def test_api_failure_falls_back_to_sample(self):
+        s = get_region_data("강남구", api_key="invalid_key_for_test")
+        assert s.is_sample
+        assert s.region == "강남구"
