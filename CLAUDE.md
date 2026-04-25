@@ -112,6 +112,12 @@ streamlit run src/app.py      # Streamlit Web UI
 - `/ship-stage`: 테스트 → 커밋 → 푸시 → PR → 머지 전체 플로우 자동화
 - `/refactor-persona`: 페르소나 변경 + 테스트 키워드 동시 갱신 TDD 루프
 
+## gstack
+
+Use the `/browse` skill from gstack for all web browsing. Never use `mcp__claude-in-chrome__*` tools.
+
+Available skills: `/office-hours`, `/plan-ceo-review`, `/plan-eng-review`, `/plan-design-review`, `/design-consultation`, `/design-shotgun`, `/design-html`, `/review`, `/ship`, `/land-and-deploy`, `/canary`, `/benchmark`, `/browse`, `/connect-chrome`, `/qa`, `/qa-only`, `/design-review`, `/setup-browser-cookies`, `/setup-deploy`, `/setup-gbrain`, `/retro`, `/investigate`, `/document-release`, `/codex`, `/cso`, `/autoplan`, `/plan-devex-review`, `/devex-review`, `/careful`, `/freeze`, `/guard`, `/unfreeze`, `/gstack-upgrade`, `/learn`.
+
 ## 의사소통 언어
 
 - 한국어를 기본으로 사용한다.
