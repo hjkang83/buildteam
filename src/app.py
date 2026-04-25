@@ -33,6 +33,7 @@ from cashflow import CashFlowParams, build_multi_cashflow
 from monte_carlo import run_multi_monte_carlo
 from tax import TaxParams
 from pipeline import PipelineResult, run_pipeline
+from briefing import generate_ceo_briefing
 from charts import (
     sensitivity_line_chart, stress_bar_chart, region_radar,
     cashflow_chart, monte_carlo_histogram,
@@ -247,7 +248,12 @@ if start_btn:
     st.session_state["scorecards"] = p.scorecards
     st.session_state["portfolios"] = p.portfolios
 
+    briefing_text = generate_ceo_briefing(p, topic)
+    st.session_state["briefing"] = briefing_text
+
     init_msgs: list[dict] = []
+    if briefing_text:
+        init_msgs.append({"role": "system", "content": briefing_text, "type": "briefing"})
     if market_data:
         init_msgs.append({"role": "system", "content": market_data, "type": "market"})
     if yield_data:
@@ -292,7 +298,12 @@ if mock_btn:
     st.session_state["scorecards"] = mp.scorecards
     st.session_state["portfolios"] = mp.portfolios
 
+    mock_briefing = generate_ceo_briefing(mp, DEMO_TOPIC)
+    st.session_state["briefing"] = mock_briefing
+
     msgs: list[dict] = []
+    if mock_briefing:
+        msgs.append({"role": "system", "content": mock_briefing, "type": "briefing"})
     if mp.market_text:
         msgs.append({"role": "system", "content": mp.market_text, "type": "market"})
     if mp.yield_text:
@@ -349,6 +360,11 @@ messages = st.session_state.get("messages", [])
 
 for msg in messages:
     if msg["role"] == "system":
+        msg_type = msg.get("type", "")
+        if msg_type == "briefing":
+            with st.expander("📋 CEO 사전 브리핑 보고서", expanded=True):
+                st.markdown(msg["content"])
+            continue
         type_labels = {
             "market": "📈 실거래 데이터",
             "yield": "📊 수익률 분석",
@@ -360,9 +376,8 @@ for msg in messages:
             "portfolio": "📦 포트폴리오 분석",
             "file": "📎 업로드 파일",
         }
-        msg_type = msg.get("type", "")
         label = type_labels.get(msg_type, "📋 데이터")
-        with st.expander(label, expanded=msg_type in ("yield", "scenario")):
+        with st.expander(label, expanded=False):
             st.text(msg["content"])
     elif msg["role"] == "user":
         with st.chat_message("user", avatar="🧑"):
