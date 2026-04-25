@@ -312,10 +312,7 @@ if mock_btn:
 # 메인 채팅 영역
 # ------------------------------------------------------------------
 
-st.markdown(
-    "<h2 style='text-align:center;'>🏢 Data 기반 Multi-Agent 부동산 투자 자문 시스템</h2>",
-    unsafe_allow_html=True,
-)
+st.markdown("## 🏢 Data 기반 Multi-Agent 부동산 투자 자문 시스템")
 
 meeting: Meeting | None = st.session_state.get("meeting")
 
