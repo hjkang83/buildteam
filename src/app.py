@@ -48,10 +48,10 @@ st.set_page_config(
 )
 
 AGENT_COLORS = {
-    "practitioner": "#2196F3",
-    "redteam": "#F44336",
-    "mentor": "#4CAF50",
-    "clerk": "#FF9800",
+    "practitioner": "#1565C0",
+    "redteam": "#C62828",
+    "mentor": "#2E7D32",
+    "clerk": "#E65100",
 }
 
 
@@ -123,11 +123,14 @@ with st.sidebar:
 
     with st.expander("⚙️ 투자 분석 조건", expanded=False):
         ltv_pct = st.slider("LTV (대출비율 %)", 0, 80, 60, 5,
-                             help="매매가 대비 대출 비율")
+                             help="매매가 대비 대출 비율 (시장 평균 약 60%)")
         ltv = ltv_pct / 100.0
-        loan_rate = st.slider("대출금리 (연 %)", 2.0, 7.0, 4.0, 0.5)
-        vacancy = st.slider("연간 공실 (개월)", 0.0, 3.0, 1.0, 0.5)
-        mgmt_fee = st.number_input("월 관리비 (만원)", 0, 100, 15, 1)
+        loan_rate = st.slider("대출금리 (연 %)", 2.0, 7.0, 4.0, 0.5,
+                               help="주담대 변동금리 기준 (2025 시장 평균 약 4%)")
+        vacancy = st.slider("연간 공실 (개월)", 0.0, 3.0, 1.0, 0.5,
+                             help="보수적 추정 1개월, 비역세권 1.5~2개월")
+        mgmt_fee = st.number_input("월 관리비 (만원)", 0, 100, 15, 1,
+                                    help="오피스텔 평균 10~20��원, 아파트 평균 20~30만원")
 
     invest_params = InvestmentParams(
         ltv=ltv,
@@ -182,11 +185,14 @@ if start_btn:
     p = PipelineResult()
     if selected_regions:
         try:
-            p = run_pipeline(
-                selected_regions,
-                invest_params=invest_params,
-                property_type=property_type,
-            )
+            with st.status("데이터 분석 중...", expanded=True) as status:
+                status.update(label="📈 실거래 데이터 로딩 중...")
+                p = run_pipeline(
+                    selected_regions,
+                    invest_params=invest_params,
+                    property_type=property_type,
+                )
+                status.update(label="✅ 분석 완료", state="complete", expanded=False)
         except Exception as e:
             st.warning(f"⚠️ 데이터 분석 중 오류가 발생했습니다: {e}\n샘플 데이터로 계속합니다.")
     market_data = p.market_text
@@ -317,7 +323,23 @@ st.markdown("## 🏢 Data 기반 Multi-Agent 부동산 투자 자문 시스템")
 meeting: Meeting | None = st.session_state.get("meeting")
 
 if meeting is None:
-    st.info("👈 왼쪽 사이드바에서 안건을 입력하고 **회의 시작**을 눌러주세요.")
+    st.markdown(
+        "3명의 AI C-suite(CFO · CSO · 투자컨설턴트)가 **실거래 데이터 기반**으로 "
+        "부동산 투자를 토론하며 의사결정을 돕습니다."
+    )
+    hero_cols = st.columns([1, 1, 1])
+    hero_cols[0].metric("분석 권역", f"{len(REGION_CODES)}개 전국")
+    hero_cols[1].metric("분석 모듈", "8종 (수익률·세금·MC 등)")
+    hero_cols[2].metric("AI 에이전트", "3명 + 비서실장")
+    st.divider()
+    st.markdown("#### 시작하기")
+    start_cols = st.columns(2)
+    start_cols[0].markdown(
+        "**API 모드** — 사이드바에서 안건 입력 후 `회의 시작`"
+    )
+    start_cols[1].markdown(
+        "**데모 모드** — API 키 없이 즉시 체험 → 사이드바 `Mock 데모`"
+    )
     st.stop()
 
 mock_label = "  |  🎭 Mock 데모" if st.session_state.get("mock_mode") else ""
@@ -372,7 +394,7 @@ analyses_data = st.session_state.get("analyses", [])
 summaries_data = st.session_state.get("summaries", [])
 
 if analyses_data:
-    with st.expander("📊 시각화 차트", expanded=False):
+    with st.expander("📊 시각화 차트", expanded=True):
         chart_tabs = st.tabs([
             "권역 비교", "민감도", "스트레스", "현금흐름",
             "Monte Carlo", "세금", "스코어카드", "포트폴리오",
@@ -413,6 +435,8 @@ if analyses_data:
                         cols[0].metric("취득세", f"{s.acquisition.amount:,.0f}만원", f"{s.acquisition.rate_pct}%")
                         cols[1].metric("보유세(연)", f"{s.holding.total_annual:,.0f}만원")
                         cols[2].metric("세후 순이익", f"{s.net_gain_after_tax:,.0f}만원")
+            else:
+                st.info("세금 분석 데이터가 없습니다. 회의 시작 시 자동으로 계산됩니다.")
         with chart_tabs[6]:
             score_data_cached = st.session_state.get("scorecards", [])
             if score_data_cached:
@@ -430,6 +454,8 @@ if analyses_data:
                         st.markdown(f"  - 강점: {'; '.join(card.key_strengths)}")
                     if card.key_risks:
                         st.markdown(f"  - 리스크: {'; '.join(card.key_risks)}")
+            else:
+                st.info("스코어카드 데이터가 없습니다. 회의 시작 시 자동으로 계산됩니다.")
         with chart_tabs[7]:
             port_data_cached = st.session_state.get("portfolios", [])
             if port_data_cached:
@@ -438,6 +464,8 @@ if analyses_data:
                 safest = min(port_data_cached, key=lambda c: c.result.portfolio_std)
                 st.markdown(f"**수익 최적**: {best.combo_label} (IRR {best.result.portfolio_irr:.1f}%)")
                 st.markdown(f"**안정 최적**: {safest.combo_label} (변동성 {safest.result.portfolio_std:.1f}%)")
+            else:
+                st.info("포트폴리오 비교를 위해 2개 이상 지역을 선택해 주세요.")
 
 # ------------------------------------------------------------------
 # 회의 종료 → 회의록 생성
