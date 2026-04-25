@@ -16,6 +16,7 @@ Continuity features:
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import re
 from datetime import datetime
@@ -256,8 +257,7 @@ class Meeting:
         try:
             self.checkpoint()
         except OSError as e:
-            import logging
-            logging.warning("세션 체크포인트 저장 실패: %s", e)
+            logging.warning("세션 체��포인트 저장 실패: %s", e)
         return new_turns
 
     async def user_says_with_debate(
@@ -291,8 +291,7 @@ class Meeting:
         try:
             self.checkpoint()
         except OSError as e:
-            import logging
-            logging.warning("세션 체크포인트 저장 실패: %s", e)
+            logging.warning("세션 체��포인트 저장 실패: %s", e)
         return all_rounds
 
     async def _gather_responses(self) -> list[dict[str, Any]]:

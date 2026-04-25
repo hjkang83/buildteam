@@ -36,7 +36,7 @@ from archive import list_sessions  # noqa: E402
 from file_parser import SUPPORTED_EXTENSIONS, parse_file  # noqa: E402
 from file_parser import format_for_agents as format_files_for_agents  # noqa: E402
 from meeting import Meeting  # noqa: E402
-from pipeline import run_pipeline  # noqa: E402
+from pipeline import PipelineResult, run_pipeline  # noqa: E402
 from real_estate import REGION_CODES, PROPERTY_TYPES  # noqa: E402
 from tax import TaxParams  # noqa: E402
 
@@ -115,6 +115,7 @@ async def _run_interactive(
         return
 
     market_data, all_data = "", ""
+    p = PipelineResult()
     if regions:
         print(f"\n📈 실거래 데이터 로딩 중... ({', '.join(regions)})")
         p = run_pipeline(

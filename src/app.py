@@ -32,7 +32,7 @@ from scenario import rate_sensitivity, vacancy_sensitivity, price_sensitivity, s
 from cashflow import CashFlowParams, build_multi_cashflow
 from monte_carlo import run_multi_monte_carlo
 from tax import TaxParams
-from pipeline import run_pipeline
+from pipeline import PipelineResult, run_pipeline
 from charts import (
     sensitivity_line_chart, stress_bar_chart, region_radar,
     cashflow_chart, monte_carlo_histogram,
@@ -179,7 +179,6 @@ if start_btn:
         st.error("❌ 회의 안건을 입력해 주세요.")
         st.stop()
 
-    from pipeline import PipelineResult
     p = PipelineResult()
     if selected_regions:
         try:

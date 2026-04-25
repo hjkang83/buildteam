@@ -8,6 +8,7 @@ API 키가 없거나 호출 실패 시, Gold Standard 기반 샘플 데이터를
 """
 from __future__ import annotations
 
+import logging
 import os
 import time
 import xml.etree.ElementTree as ET
@@ -267,7 +268,6 @@ def _parse_trade_xml(xml_data: str, name_tag: str = "단지") -> list[TradeRecor
     try:
         root = ET.fromstring(xml_data)
     except ET.ParseError as e:
-        import logging
         logging.warning("매매 XML 파싱 실패: %s", e)
         return []
     records: list[TradeRecord] = []
@@ -289,7 +289,6 @@ def _parse_rent_xml(xml_data: str, name_tag: str = "단지") -> list[RentRecord]
     try:
         root = ET.fromstring(xml_data)
     except ET.ParseError as e:
-        import logging
         logging.warning("임대 XML 파싱 실패: %s", e)
         return []
     records: list[RentRecord] = []
@@ -349,7 +348,6 @@ def get_region_data(
                 property_type=property_type,
             )
         except Exception as e:
-            import logging
             logging.warning("API 호출 실패 (%s): %s — 샘플 데이터로 대체합니다.", region_name, e)
 
     return _get_sample_data(region_name, deal_ym, property_type)
