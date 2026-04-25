@@ -264,7 +264,12 @@ def fetch_rents(
 
 
 def _parse_trade_xml(xml_data: str, name_tag: str = "단지") -> list[TradeRecord]:
-    root = ET.fromstring(xml_data)
+    try:
+        root = ET.fromstring(xml_data)
+    except ET.ParseError as e:
+        import logging
+        logging.warning("매매 XML 파싱 실패: %s", e)
+        return []
     records: list[TradeRecord] = []
     for item in root.iter("item"):
         records.append(TradeRecord(
@@ -281,7 +286,12 @@ def _parse_trade_xml(xml_data: str, name_tag: str = "단지") -> list[TradeRecor
 
 
 def _parse_rent_xml(xml_data: str, name_tag: str = "단지") -> list[RentRecord]:
-    root = ET.fromstring(xml_data)
+    try:
+        root = ET.fromstring(xml_data)
+    except ET.ParseError as e:
+        import logging
+        logging.warning("임대 XML 파싱 실패: %s", e)
+        return []
     records: list[RentRecord] = []
     for item in root.iter("item"):
         records.append(RentRecord(
@@ -338,8 +348,9 @@ def get_region_data(
                 is_sample=False,
                 property_type=property_type,
             )
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.warning("API 호출 실패 (%s): %s — 샘플 데이터로 대체합니다.", region_name, e)
 
     return _get_sample_data(region_name, deal_ym, property_type)
 
