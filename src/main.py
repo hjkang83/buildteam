@@ -37,6 +37,16 @@ from file_parser import SUPPORTED_EXTENSIONS, parse_file  # noqa: E402
 from file_parser import format_for_agents as format_files_for_agents  # noqa: E402
 from meeting import Meeting  # noqa: E402
 from pipeline import PipelineResult, run_pipeline  # noqa: E402
+from profiles import (  # noqa: E402
+    INVESTMENT_GOALS,
+    LIFE_STAGES,
+    RISK_PROFILES,
+    Profile,
+    format_for_agents as format_profile_for_agents,
+    list_profiles,
+    load_profile,
+    save_profile,
+)
 from real_estate import REGION_CODES, PROPERTY_TYPES  # noqa: E402
 from tax import TaxParams  # noqa: E402
 
@@ -73,6 +83,102 @@ def _print_turns(turns: list[dict]) -> None:
         print()
 
 
+def _load_profile_or_warn(name: str | None) -> Profile | None:
+    """Load a profile by name. Print a warning (don't crash) if missing."""
+    if not name:
+        return None
+    profile = load_profile(name)
+    if profile is None:
+        available = list_profiles()
+        print(f"⚠️  프로필을 찾을 수 없습니다: '{name}'")
+        if available:
+            print(f"   사용 가능한 프로필: {', '.join(available)}")
+        else:
+            print("   `--init-profile <이름>` 으로 새 프로필을 만들 수 있습니다.")
+        return None
+    print(f"👤 프로필 로드: '{name}' — {profile.nickname} · "
+          f"{profile.risk_label} · {profile.goal_label}")
+    return profile
+
+
+def _print_profile_list() -> None:
+    names = list_profiles()
+    if not names:
+        print("(저장된 프로필이 없습니다)")
+        print("새로 만들기: python src/main.py --init-profile <이름>")
+        return
+    print("👤 저장된 프로필:")
+    for name in names:
+        p = load_profile(name)
+        if p is None:
+            print(f"  • {name} (읽기 실패)")
+            continue
+        print(f"  • {name} — {p.nickname} · {p.risk_label} · {p.goal_label}")
+
+
+def _ask(prompt: str, default: str) -> str:
+    val = input(f"{prompt} [{default}]: ").strip()
+    return val or default
+
+
+def _ask_choice(prompt: str, choices: dict[str, str], default: str) -> str:
+    opts = " / ".join(f"{k}={v}" for k, v in choices.items())
+    while True:
+        val = _ask(f"{prompt}\n   ({opts})", default)
+        if val in choices:
+            return val
+        print(f"   ⚠️  '{val}'은 유효하지 않습니다. 키 중 하나를 입력하세요.")
+
+
+def _ask_int(prompt: str, default: int, *, min_val: int = 0) -> int:
+    while True:
+        raw = _ask(prompt, str(default))
+        try:
+            n = int(raw)
+        except ValueError:
+            print("   ⚠️  숫자를 입력하세요.")
+            continue
+        if n < min_val:
+            print(f"   ⚠️  {min_val} 이상이어야 합니다.")
+            continue
+        return n
+
+
+def _run_init_profile(name: str = "default") -> None:
+    """Interactive wizard to create or edit a profile."""
+    print(BANNER)
+    existing = load_profile(name)
+    if existing:
+        print(f"♻️  기존 프로필 '{name}' 편집 모드 — Enter로 현재 값 유지\n")
+        base = existing
+    else:
+        print(f"✨ 새 프로필 '{name}' 생성 — Enter로 기본값 사용\n")
+        base = Profile()
+
+    nickname = _ask("닉네임", base.nickname)
+    risk_profile = _ask_choice("리스크 프로파일", RISK_PROFILES, base.risk_profile)
+    investment_goal = _ask_choice("투자 목적", INVESTMENT_GOALS, base.investment_goal)
+    budget_manwon = _ask_int("가용 예산 (만원, 0=미입력)", base.budget_manwon)
+    property_count = _ask_int("보유 주택 수 (0=무주택)", base.property_count)
+    holding_years = _ask_int("투자 시계 (년)", base.holding_years, min_val=1)
+    life_stage = _ask_choice("생애주기", LIFE_STAGES, base.life_stage)
+    notes = _ask("메모 (선택, 자유 입력)", base.notes)
+
+    profile = Profile(
+        nickname=nickname,
+        risk_profile=risk_profile,
+        investment_goal=investment_goal,
+        budget_manwon=budget_manwon,
+        property_count=property_count,
+        holding_years=holding_years,
+        life_stage=life_stage,
+        notes=notes,
+    )
+    path = save_profile(profile, name)
+    print(f"\n✅ 프로필 저장: {path}\n")
+    print(format_profile_for_agents(profile))
+
+
 def _load_files(file_paths: list[str]) -> str:
     """Parse uploaded files and return formatted text block."""
     file_texts: list[tuple[str, str]] = []
@@ -99,6 +205,7 @@ async def _run_interactive(
     use_context: bool = False,
     regions: list[str] | None = None,
     files: list[str] | None = None,
+    profile: Profile | None = None,
     property_type: str = "officetel",
     use_cashflow: bool = False,
     use_monte_carlo: bool = False,
@@ -151,7 +258,7 @@ async def _run_interactive(
         file_data = _load_files(files)
 
     if use_context:
-        meeting = Meeting.with_context(topic, regions=regions)
+        meeting = Meeting.with_context(topic, regions=regions, profile=profile)
         if file_data:
             meeting.file_data = file_data
             meeting.transcript.insert(-1, {"role": "user", "text": file_data})
@@ -160,12 +267,12 @@ async def _run_interactive(
             print(meeting.past_context)
             print()
     elif files:
-        meeting = Meeting.with_files(topic, files, regions=regions)
+        meeting = Meeting.with_files(topic, files, regions=regions, profile=profile)
     elif market_data:
-        meeting = Meeting(topic, market_data=market_data,
+        meeting = Meeting(topic, profile=profile, market_data=market_data,
                           yield_data=p.yield_text, scenario_data=all_data)
     else:
-        meeting = Meeting(topic)
+        meeting = Meeting(topic, profile=profile)
 
     print(f"\n📌 안건: {topic}")
     print(f"🗂  세션 ID: {meeting.session_id}")
@@ -227,6 +334,7 @@ async def _run_demo(
     *,
     use_context: bool = False,
     regions: list[str] | None = None,
+    profile: Profile | None = None,
     property_type: str = "officetel",
     use_cashflow: bool = False,
     use_monte_carlo: bool = False,
@@ -281,9 +389,9 @@ async def _run_demo(
         scenario_data, cashflow_data, mc_data, tax_data, score_data, port_data,
     ]))
     if use_context:
-        meeting = Meeting.with_context(DEMO_TOPIC, regions=regions)
+        meeting = Meeting.with_context(DEMO_TOPIC, regions=regions, profile=profile)
     else:
-        meeting = Meeting(DEMO_TOPIC, market_data=market_data,
+        meeting = Meeting(DEMO_TOPIC, profile=profile, market_data=market_data,
                           yield_data=yield_data, scenario_data=all_data)
 
     for user_text in DEMO_SCRIPT:
@@ -411,10 +519,35 @@ def main() -> None:
         action="store_true",
         help="저장된 세션 체크포인트 목록 출력 후 종료",
     )
+    parser.add_argument(
+        "--profile",
+        metavar="NAME",
+        help="저장된 사용자 투자 프로필을 회의에 주입 (예: --profile default)",
+    )
+    parser.add_argument(
+        "--init-profile",
+        nargs="?",
+        const="default",
+        metavar="NAME",
+        help="대화형 위저드로 프로필 생성/편집 후 종료 (이름 생략 시 'default')",
+    )
+    parser.add_argument(
+        "--list-profiles",
+        action="store_true",
+        help="저장된 프로필 목록 출력 후 종료",
+    )
     args = parser.parse_args()
 
     if args.list_sessions:
         _print_session_list()
+        return
+
+    if args.list_profiles:
+        _print_profile_list()
+        return
+
+    if args.init_profile:
+        _run_init_profile(args.init_profile)
         return
 
     if not _check_api_key():
@@ -423,7 +556,9 @@ def main() -> None:
     regions = args.region
     files = args.file
     full = args.full
+    profile = _load_profile_or_warn(args.profile)
     extra = dict(
+        profile=profile,
         property_type=args.property_type,
         use_cashflow=args.cashflow or full,
         use_monte_carlo=args.monte_carlo or full,
@@ -434,6 +569,8 @@ def main() -> None:
         debate_rounds=args.rounds,
     )
     if args.resume:
+        if args.profile:
+            print("ℹ️  --resume 시 프로필은 체크포인트에서 복원됩니다 (--profile 무시)")
         asyncio.run(_run_resume(args.resume))
     elif args.demo:
         asyncio.run(_run_demo(use_context=args.context, regions=regions, **extra))
