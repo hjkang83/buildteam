@@ -37,6 +37,7 @@ from personas import (
     AGENT_CONFIG, build_system_prompt,
     build_diversity_reminder, detect_used_angles,
 )
+from profiles import Profile, format_for_agents as format_profile_for_agents
 from real_estate import format_for_agents, get_multi_region_data
 from file_parser import (
     format_for_agents as format_files_for_agents,
@@ -92,6 +93,7 @@ class Meeting:
         topic: str,
         *,
         model: str | None = None,
+        profile: Profile | None = None,
         past_context: str = "",
         market_data: str = "",
         yield_data: str = "",
@@ -104,6 +106,8 @@ class Meeting:
         self.topic = topic
         self.started_at = started_at or datetime.now()
         self.model = model or os.getenv("LLM_MODEL", DEFAULT_MODEL)
+        self.profile = profile
+        self.profile_data = format_profile_for_agents(profile) if profile else ""
         self.past_context = past_context
         self.market_data = market_data
         self.yield_data = yield_data
@@ -123,6 +127,9 @@ class Meeting:
             self.transcript = transcript
         else:
             self.transcript = []
+            # Profile goes first — agents should anchor every later block to it
+            if self.profile_data:
+                self.transcript.append({"role": "user", "text": self.profile_data})
             if past_context:
                 self.transcript.append({"role": "user", "text": past_context})
             if market_data:
@@ -163,6 +170,7 @@ class Meeting:
         params: InvestmentParams | None = None,
         limit: int = 3,
         model: str | None = None,
+        profile: Profile | None = None,
     ) -> "Meeting":
         """Start a new meeting with auto-loaded past-meeting context
         and optional real estate market data + yield analysis."""
@@ -171,7 +179,7 @@ class Meeting:
         market, yld, scn = "", "", ""
         if regions:
             market, yld, scn = cls._build_region_blocks(regions, params)
-        return cls(topic, model=model, past_context=past,
+        return cls(topic, model=model, profile=profile, past_context=past,
                    market_data=market, yield_data=yld, scenario_data=scn)
 
     @classmethod
@@ -182,10 +190,11 @@ class Meeting:
         *,
         params: InvestmentParams | None = None,
         model: str | None = None,
+        profile: Profile | None = None,
     ) -> "Meeting":
         """Start a new meeting with real estate market data + yield + scenario."""
         market, yld, scn = cls._build_region_blocks(regions, params)
-        return cls(topic, model=model, market_data=market,
+        return cls(topic, model=model, profile=profile, market_data=market,
                    yield_data=yld, scenario_data=scn)
 
     @classmethod
@@ -197,6 +206,7 @@ class Meeting:
         regions: list[str] | None = None,
         params: InvestmentParams | None = None,
         model: str | None = None,
+        profile: Profile | None = None,
     ) -> "Meeting":
         """Start a new meeting with uploaded file data (and optional market/yield/scenario)."""
         from pathlib import Path as P
@@ -208,7 +218,7 @@ class Meeting:
         market, yld, scn = "", "", ""
         if regions:
             market, yld, scn = cls._build_region_blocks(regions, params)
-        return cls(topic, model=model, market_data=market,
+        return cls(topic, model=model, profile=profile, market_data=market,
                    yield_data=yld, scenario_data=scn, file_data=file_block)
 
     @classmethod
@@ -218,9 +228,13 @@ class Meeting:
         if data is None:
             return None
         started_at = datetime.fromisoformat(data["started_at"])
+        profile = None
+        if data.get("profile"):
+            profile = Profile.from_dict(data["profile"])
         m = cls(
             topic=data["topic"],
             model=data.get("model"),
+            profile=profile,
             past_context=data.get("past_context", ""),
             market_data=data.get("market_data", ""),
             yield_data=data.get("yield_data", ""),
@@ -230,6 +244,11 @@ class Meeting:
             started_at=started_at,
             transcript=data.get("transcript", []),
         )
+        # When a transcript is restored, the formatted profile_data block was not
+        # re-injected (it lives inside the transcript already). Keep the
+        # convenience copy in sync for downstream callers.
+        if "profile_data" in data:
+            m.profile_data = data["profile_data"]
         if "angle_tracker" in data:
             m.angle_tracker = data["angle_tracker"]
         return m
@@ -338,6 +357,8 @@ class Meeting:
             "topic": self.topic,
             "model": self.model,
             "started_at": self.started_at.isoformat(),
+            "profile": self.profile.to_dict() if self.profile else None,
+            "profile_data": self.profile_data,
             "past_context": self.past_context,
             "market_data": self.market_data,
             "yield_data": self.yield_data,
