@@ -33,3 +33,7 @@ meetings/.sessions/
 node_modules/
 dist/
 build/
+
+# Phase A: user investment profiles — private, except sample
+profiles/*.json
+!profiles/example.json

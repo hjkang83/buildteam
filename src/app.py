@@ -24,6 +24,15 @@ except ImportError:
 from meeting import Meeting
 from personas import AGENT_CONFIG
 from archive import list_meetings
+from profiles import (
+    INVESTMENT_GOALS,
+    LIFE_STAGES,
+    RISK_PROFILES,
+    Profile,
+    list_profiles,
+    load_profile,
+    save_profile,
+)
 from real_estate import REGION_CODES, REGION_GROUPS, PROPERTY_TYPES
 from file_parser import parse_file, SUPPORTED_EXTENSIONS
 from file_parser import format_for_agents as format_files_for_agents
@@ -83,6 +92,95 @@ with st.sidebar:
             os.environ["ANTHROPIC_API_KEY"] = api_key
 
     st.divider()
+
+    selected_profile: Profile | None = None
+    with st.expander("👤 사용자 프로필", expanded=False):
+        available_profiles = list_profiles()
+        sel_options = ["(사용 안 함)"] + available_profiles
+        sel_pick = st.selectbox(
+            "저장된 프로필",
+            options=sel_options,
+            help="회의 시작 시 투자컨설턴트에게 컨텍스트로 주입됩니다.",
+        )
+        if sel_pick != "(사용 안 함)":
+            selected_profile = load_profile(sel_pick)
+            if selected_profile:
+                st.markdown(
+                    f"**{selected_profile.nickname}** · "
+                    f"{selected_profile.risk_label} · "
+                    f"{selected_profile.goal_label}"
+                )
+                st.caption(
+                    f"예산 {selected_profile.budget_manwon:,}만원 · "
+                    f"{selected_profile.holding_years}년 보유 · "
+                    f"{selected_profile.life_stage_label}"
+                )
+                if selected_profile.notes:
+                    st.caption(f"📝 {selected_profile.notes}")
+
+        with st.expander("➕ 새로 만들기 / ✏️ 편집", expanded=False):
+            with st.form("profile_form", clear_on_submit=False):
+                base = selected_profile or Profile()
+                edit_name = st.text_input(
+                    "프로필 이름 (영문/숫자/언더스코어)",
+                    value=sel_pick if sel_pick != "(사용 안 함)" else "default",
+                )
+                form_nickname = st.text_input("닉네임", value=base.nickname)
+                risk_keys = list(RISK_PROFILES.keys())
+                form_risk = st.selectbox(
+                    "리스크 프로파일",
+                    options=risk_keys,
+                    index=risk_keys.index(base.risk_profile)
+                    if base.risk_profile in risk_keys else 1,
+                    format_func=lambda k: RISK_PROFILES[k],
+                )
+                goal_keys = list(INVESTMENT_GOALS.keys())
+                form_goal = st.selectbox(
+                    "투자 목적",
+                    options=goal_keys,
+                    index=goal_keys.index(base.investment_goal)
+                    if base.investment_goal in goal_keys else 0,
+                    format_func=lambda k: INVESTMENT_GOALS[k],
+                )
+                form_budget = st.number_input(
+                    "가용 예산 (만원, 0=미입력)",
+                    min_value=0, max_value=10_000_000,
+                    value=int(base.budget_manwon), step=1000,
+                )
+                form_count = st.number_input(
+                    "보유 주택 수 (0=무주택)",
+                    min_value=0, max_value=20,
+                    value=int(base.property_count), step=1,
+                )
+                form_holding = st.number_input(
+                    "투자 시계 (년)",
+                    min_value=1, max_value=30,
+                    value=int(base.holding_years), step=1,
+                )
+                life_keys = list(LIFE_STAGES.keys())
+                form_life = st.selectbox(
+                    "생애주기",
+                    options=life_keys,
+                    index=life_keys.index(base.life_stage)
+                    if base.life_stage in life_keys else 1,
+                    format_func=lambda k: LIFE_STAGES[k],
+                )
+                form_notes = st.text_area("메모 (선택)", value=base.notes, height=80)
+
+                if st.form_submit_button("💾 프로필 저장"):
+                    new_profile = Profile(
+                        nickname=form_nickname,
+                        risk_profile=form_risk,
+                        investment_goal=form_goal,
+                        budget_manwon=int(form_budget),
+                        property_count=int(form_count),
+                        holding_years=int(form_holding),
+                        life_stage=form_life,
+                        notes=form_notes,
+                    )
+                    path = save_profile(new_profile, edit_name)
+                    st.success(f"✅ 저장됨: `{path.name}`")
+                    st.rerun()
 
     topic = st.text_input(
         "📌 회의 안건",
@@ -235,6 +333,7 @@ if start_btn:
     ]))
     meeting = Meeting(
         topic,
+        profile=selected_profile,
         market_data=market_data,
         yield_data=yield_data,
         scenario_data=all_data,

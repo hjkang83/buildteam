@@ -16,6 +16,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from meeting import Meeting, Agent, SPEAKERS, _strip_code_fence, _slugify
+from profiles import Profile
 
 
 # ------------------------------------------------------------------
@@ -357,6 +358,129 @@ class TestAlternateConstructors:
         assert "강남구" in market
         assert "수익률" in yld
         assert "시나리오" in scn or "민감도" in scn
+
+
+# ------------------------------------------------------------------
+# Profile integration (Phase A.2)
+# ------------------------------------------------------------------
+
+class TestProfileIntegration:
+    @pytest.fixture
+    def sample_profile(self) -> Profile:
+        return Profile(
+            nickname="홍대표",
+            risk_profile="conservative",
+            investment_goal="rental",
+            budget_manwon=45000,
+            property_count=1,
+            holding_years=5,
+            life_stage="expansion",
+            notes="강남/성수 권역 우선",
+        )
+
+    def test_profile_stored_on_meeting(self, mock_client, sample_profile):
+        with patch("meeting.AsyncAnthropic", return_value=mock_client):
+            m = Meeting("테스트 안건", profile=sample_profile)
+        assert m.profile is sample_profile
+        assert m.profile_data != ""
+
+    def test_no_profile_means_empty_profile_data(self, meeting_no_api):
+        assert meeting_no_api.profile is None
+        assert meeting_no_api.profile_data == ""
+
+    def test_profile_block_injected_into_transcript(self, mock_client, sample_profile):
+        with patch("meeting.AsyncAnthropic", return_value=mock_client):
+            m = Meeting("테스트 안건", profile=sample_profile)
+        texts = [t["text"] for t in m.transcript]
+        assert any("홍대표" in t for t in texts)
+        assert any("보수적" in t for t in texts)
+        assert any("강남/성수 권역 우선" in t for t in texts)
+
+    def test_profile_block_appears_before_topic(self, mock_client, sample_profile):
+        with patch("meeting.AsyncAnthropic", return_value=mock_client):
+            m = Meeting("테스트 안건", profile=sample_profile)
+        # First transcript entry should be profile, last should be the topic kickoff
+        first_text = m.transcript[0]["text"]
+        last_text = m.transcript[-1]["text"]
+        assert "프로필" in first_text
+        assert "회의 시작" in last_text
+
+    def test_profile_visible_to_agents_in_messages(self, mock_client, sample_profile):
+        with patch("meeting.AsyncAnthropic", return_value=mock_client):
+            m = Meeting("테스트 안건", profile=sample_profile)
+        msgs = m._messages_for_agent("mentor")
+        joined = "\n".join(msg["content"] for msg in msgs)
+        assert "홍대표" in joined
+        assert "보수적" in joined
+
+    def test_with_market_data_propagates_profile(self, mock_client, sample_profile):
+        with patch("meeting.AsyncAnthropic", return_value=mock_client):
+            m = Meeting.with_market_data(
+                "테스트", ["강남구"], profile=sample_profile,
+            )
+        assert m.profile is sample_profile
+        texts = [t["text"] for t in m.transcript]
+        assert any("홍대표" in t for t in texts)
+
+    def test_with_context_propagates_profile(self, mock_client, sample_profile):
+        with patch("meeting.AsyncAnthropic", return_value=mock_client):
+            m = Meeting.with_context(
+                "테스트 안건", regions=["강남구"], profile=sample_profile,
+            )
+        assert m.profile is sample_profile
+        texts = [t["text"] for t in m.transcript]
+        assert any("홍대표" in t for t in texts)
+
+    def test_checkpoint_includes_profile(self, mock_client, sample_profile):
+        with patch("meeting.AsyncAnthropic", return_value=mock_client):
+            m = Meeting("테스트 안건", profile=sample_profile)
+        path = m.checkpoint()
+        try:
+            data = json.loads(Path(path).read_text(encoding="utf-8"))
+            assert data["profile"] is not None
+            assert data["profile"]["nickname"] == "홍대표"
+            assert data["profile"]["risk_profile"] == "conservative"
+        finally:
+            from archive import delete_session
+            delete_session(m.session_id)
+
+    def test_resume_restores_profile(self, mock_client, sample_profile):
+        with patch("meeting.AsyncAnthropic", return_value=mock_client):
+            m = Meeting("테스트 안건", profile=sample_profile)
+        m.checkpoint()
+        try:
+            with patch("meeting.AsyncAnthropic", return_value=mock_client):
+                restored = Meeting.from_session(m.session_id)
+            assert restored is not None
+            assert restored.profile is not None
+            assert restored.profile.nickname == "홍대표"
+            assert restored.profile.risk_profile == "conservative"
+            assert restored.profile_data == m.profile_data
+        finally:
+            from archive import delete_session
+            delete_session(m.session_id)
+
+    def test_resume_without_profile_field_is_safe(self, mock_client):
+        """Backwards compatibility: old session checkpoints without profile field."""
+        with patch("meeting.AsyncAnthropic", return_value=mock_client):
+            m = Meeting("테스트 안건")
+        m.checkpoint()
+        try:
+            # Tamper: drop the profile field to mimic an older checkpoint
+            from archive import save_session, load_session
+            data = load_session(m.session_id)
+            data.pop("profile", None)
+            data.pop("profile_data", None)
+            save_session(m.session_id, data)
+
+            with patch("meeting.AsyncAnthropic", return_value=mock_client):
+                restored = Meeting.from_session(m.session_id)
+            assert restored is not None
+            assert restored.profile is None
+            assert restored.profile_data == ""
+        finally:
+            from archive import delete_session
+            delete_session(m.session_id)
 
 
 # ------------------------------------------------------------------
